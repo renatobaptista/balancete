@@ -16,6 +16,7 @@ import {
   insertEntry, insertEntriesBulk, updateEntry, deleteEntry as dbDeleteEntry, deleteEntriesForInstallmentCancel,
   insertCategory, deleteCategoryRow, renameCategoryRow, updateCategorySubcategories, renameCategoryInEntries,
   upsertGoals,
+  insertAccount, updateAccount, deleteAccount as dbDeleteAccount, renameAccountInEntries,
 } from "./lib/db";
 import { supabase } from "./lib/supabaseClient";
 
@@ -545,33 +546,44 @@ export default function App({ session }) {
   function addAccount(name, kind, currency) {
     const clean = name.trim();
     if (!clean) return;
-    setAccounts((prev) => (prev.some((a) => a.name === clean)
-      ? prev
-      : [...prev, { name: clean, kind: kind || "corrente", currency: currency || "BRL", active: true, initialBalance: 0 }]));
+    if (accounts.some((a) => a.name === clean)) return;
+    const draft = { name: clean, kind: kind || "corrente", currency: currency || "BRL", active: true, initialBalance: 0 };
+    insertAccount(draft, userId)
+      .then((saved) => setAccounts((prev) => [...prev, saved]))
+      .catch(() => setSaveError(true));
   }
   function renameAccount(oldName, newName) {
     const clean = (newName || "").trim();
     if (!clean || clean === oldName) return;
-    setAccounts((prev) => {
-      if (prev.some((a) => a.name === clean)) return prev;
-      return prev.map((a) => (a.name === oldName ? { ...a, name: clean } : a));
-    });
+    if (accounts.some((a) => a.name === clean)) return;
+    const account = accounts.find((a) => a.name === oldName);
+    if (!account) return;
+    setAccounts((prev) => prev.map((a) => (a.name === oldName ? { ...a, name: clean } : a)));
+    updateAccount(account.id, { name: clean }).catch(() => setSaveError(true));
     setEntries((prev) => prev.map((e) => (e.account === oldName ? { ...e, account: clean } : e)));
+    renameAccountInEntries(userId, oldName, clean).catch(() => setSaveError(true));
   }
   function deleteAccount(name) {
+    const account = accounts.find((a) => a.name === name);
     setAccounts((prev) => prev.filter((a) => a.name !== name));
+    if (account) dbDeleteAccount(account.id).catch(() => setSaveError(true));
+  }
+  function patchAccountByName(name, localPatch, dbPatch) {
+    const account = accounts.find((a) => a.name === name);
+    setAccounts((prev) => prev.map((a) => (a.name === name ? { ...a, ...localPatch } : a)));
+    if (account) updateAccount(account.id, dbPatch).catch(() => setSaveError(true));
   }
   function setAccountKind(name, kind) {
-    setAccounts((prev) => prev.map((a) => (a.name === name ? { ...a, kind } : a)));
+    patchAccountByName(name, { kind }, { kind });
   }
   function setAccountCurrency(name, currency) {
-    setAccounts((prev) => prev.map((a) => (a.name === name ? { ...a, currency } : a)));
+    patchAccountByName(name, { currency }, { currency });
   }
   function setAccountActive(name, active) {
-    setAccounts((prev) => prev.map((a) => (a.name === name ? { ...a, active } : a)));
+    patchAccountByName(name, { active }, { active });
   }
   function setAccountInitialBalance(name, value) {
-    setAccounts((prev) => prev.map((a) => (a.name === name ? { ...a, initialBalance: value } : a)));
+    patchAccountByName(name, { initialBalance: value }, { initial_balance: value });
   }
   function getAccountCurrency(name) {
     return accounts.find((a) => a.name === name)?.currency || "BRL";
