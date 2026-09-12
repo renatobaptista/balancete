@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import { LogIn, UserPlus, LogOut, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 
-const SUPABASE_URL = "https://egclcvkjgfibbicffzjt.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_0qoes77UE9l2wxz_locPJw_VYwD4vVi";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 async function supaAuth(path, body) {
   const res = await fetch(`${SUPABASE_URL}/auth/v1${path}`, {
