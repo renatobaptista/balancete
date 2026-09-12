@@ -479,17 +479,21 @@ export default function App({ session }) {
   }
 
   function setLimit(category, value) {
-    setGoals((prev) => ({ ...prev, limits: { ...prev.limits, [category]: value } }));
+    const next = { ...goals, limits: { ...goals.limits, [category]: value } };
+    setGoals(next);
+    upsertGoals(next, userId).catch(() => setSaveError(true));
   }
   function removeLimit(category) {
-    setGoals((prev) => {
-      const next = { ...prev.limits };
-      delete next[category];
-      return { ...prev, limits: next };
-    });
+    const nextLimits = { ...goals.limits };
+    delete nextLimits[category];
+    const next = { ...goals, limits: nextLimits };
+    setGoals(next);
+    upsertGoals(next, userId).catch(() => setSaveError(true));
   }
   function setInvestTarget(value) {
-    setGoals((prev) => ({ ...prev, investTarget: value }));
+    const next = { ...goals, investTarget: value };
+    setGoals(next);
+    upsertGoals(next, userId).catch(() => setSaveError(true));
   }
 
   function addCategory(type, name) {
