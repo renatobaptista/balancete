@@ -14,6 +14,8 @@ import { DEFAULT_CATEGORIES } from "./lib/defaultCategories";
 import {
   fetchAll,
   insertEntry, insertEntriesBulk, updateEntry, deleteEntry as dbDeleteEntry, deleteEntriesForInstallmentCancel,
+  insertCategory, deleteCategoryRow, renameCategoryRow, updateCategorySubcategories, renameCategoryInEntries,
+  upsertGoals,
 } from "./lib/db";
 import { supabase } from "./lib/supabaseClient";
 
@@ -492,10 +494,9 @@ export default function App({ session }) {
   function addCategory(type, name) {
     const clean = name.trim();
     if (!clean) return;
-    setCategories((prev) => {
-      if (prev[type] && prev[type][clean] !== undefined) return prev;
-      return { ...prev, [type]: { ...prev[type], [clean]: [] } };
-    });
+    if (categories[type] && categories[type][clean] !== undefined) return;
+    setCategories((prev) => ({ ...prev, [type]: { ...prev[type], [clean]: [] } }));
+    insertCategory(userId, type, clean).catch(() => setSaveError(true));
   }
   function deleteCategory(type, name) {
     setCategories((prev) => {
@@ -503,41 +504,42 @@ export default function App({ session }) {
       delete next[name];
       return { ...prev, [type]: next };
     });
+    deleteCategoryRow(userId, type, name).catch(() => setSaveError(true));
   }
   function renameCategory(type, oldName, newName) {
     const clean = (newName || "").trim();
     if (!clean || clean === oldName) return;
-    setCategories((prev) => {
-      if (prev[type][clean] !== undefined) return prev;
-      const next = {};
-      Object.entries(prev[type]).forEach(([k, v]) => {
-        next[k === oldName ? clean : k] = v;
-      });
-      return { ...prev, [type]: next };
+    if (categories[type][clean] !== undefined) return;
+    const nextTypeCategories = {};
+    Object.entries(categories[type]).forEach(([k, v]) => {
+      nextTypeCategories[k === oldName ? clean : k] = v;
     });
+    setCategories((prev) => ({ ...prev, [type]: nextTypeCategories }));
+    renameCategoryRow(userId, type, oldName, clean).catch(() => setSaveError(true));
     setEntries((prev) => prev.map((e) => (e.type === type && e.category === oldName ? { ...e, category: clean } : e)));
-    setGoals((prev) => {
-      if (prev.limits[oldName] === undefined) return prev;
-      const next = { ...prev.limits };
-      next[clean] = next[oldName];
-      delete next[oldName];
-      return { ...prev, limits: next };
-    });
+    renameCategoryInEntries(userId, type, oldName, clean).catch(() => setSaveError(true));
+    if (goals.limits[oldName] !== undefined) {
+      const nextLimits = { ...goals.limits };
+      nextLimits[clean] = nextLimits[oldName];
+      delete nextLimits[oldName];
+      const nextGoals = { ...goals, limits: nextLimits };
+      setGoals(nextGoals);
+      upsertGoals(nextGoals, userId).catch(() => setSaveError(true));
+    }
   }
   function addSubcategory(type, category, sub) {
     const clean = sub.trim();
     if (!clean) return;
-    setCategories((prev) => {
-      const list = prev[type][category] || [];
-      if (list.includes(clean)) return prev;
-      return { ...prev, [type]: { ...prev[type], [category]: [...list, clean] } };
-    });
+    const list = categories[type][category] || [];
+    if (list.includes(clean)) return;
+    const nextList = [...list, clean];
+    setCategories((prev) => ({ ...prev, [type]: { ...prev[type], [category]: nextList } }));
+    updateCategorySubcategories(userId, type, category, nextList).catch(() => setSaveError(true));
   }
   function deleteSubcategory(type, category, sub) {
-    setCategories((prev) => ({
-      ...prev,
-      [type]: { ...prev[type], [category]: (prev[type][category] || []).filter((s) => s !== sub) },
-    }));
+    const nextList = (categories[type][category] || []).filter((s) => s !== sub);
+    setCategories((prev) => ({ ...prev, [type]: { ...prev[type], [category]: nextList } }));
+    updateCategorySubcategories(userId, type, category, nextList).catch(() => setSaveError(true));
   }
 
   function addAccount(name, kind, currency) {
