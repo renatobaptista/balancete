@@ -11,7 +11,10 @@ import {
 } from "recharts";
 import * as XLSX from "xlsx";
 import { DEFAULT_CATEGORIES } from "./lib/defaultCategories";
-import { fetchAll } from "./lib/db";
+import {
+  fetchAll,
+  insertEntry, insertEntriesBulk, updateEntry, deleteEntry as dbDeleteEntry, deleteEntriesForInstallmentCancel,
+} from "./lib/db";
 import { supabase } from "./lib/supabaseClient";
 
 const TYPE_META = {
@@ -41,7 +44,7 @@ function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 function uid() {
-  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  return crypto.randomUUID();
 }
 function addMonthsToDate(dateStr, n) {
   const [y, m, d] = dateStr.split("-").map(Number);
@@ -320,10 +323,13 @@ export default function App({ session }) {
       }
       setFormError("");
       if (editingEntryId) {
-        setEntries((prev) => prev.map((e) => (e.id === editingEntryId ? {
-          ...e, type: "transfer", amount: amountNum, toAmount: toAmountNum, fromCurrency, toCurrency,
+        const nextEntry = {
+          ...entries.find((e) => e.id === editingEntryId),
+          type: "transfer", amount: amountNum, toAmount: toAmountNum, fromCurrency, toCurrency,
           fromAccount: fAccount, toAccount: fToAccount, description: fDesc.trim(), notes: fNotes.trim(), date: fDate,
-        } : e)));
+        };
+        setEntries((prev) => prev.map((e) => (e.id === editingEntryId ? nextEntry : e)));
+        updateEntry(editingEntryId, nextEntry, userId).catch(() => setSaveError(true));
         resetFormFields();
         return;
       }
@@ -341,6 +347,7 @@ export default function App({ session }) {
         date: fDate,
       };
       setEntries((prev) => [entry, ...prev]);
+      insertEntry(entry, userId).catch(() => setSaveError(true));
       resetFormFields();
       return;
     }
@@ -360,10 +367,12 @@ export default function App({ session }) {
         setPendingEditScope(true);
         return;
       }
-      setEntries((prev) => prev.map((e) => (e.id === editingEntryId ? {
-        ...e, type: fType, amount: amountNum, category: fCategory, subcategory: fSubcategory,
+      const nextEntry = {
+        ...original, type: fType, amount: amountNum, category: fCategory, subcategory: fSubcategory,
         account: fAccount.trim(), currency, description: fDesc.trim(), notes: fNotes.trim(), date: fDate,
-      } : e)));
+      };
+      setEntries((prev) => prev.map((e) => (e.id === editingEntryId ? nextEntry : e)));
+      updateEntry(editingEntryId, nextEntry, userId).catch(() => setSaveError(true));
       learnDescriptionRule(fDesc, fType, fCategory, fSubcategory);
       resetFormFields();
       return;
@@ -400,6 +409,7 @@ export default function App({ session }) {
         });
       }
       setEntries((prev) => [...newEntries, ...prev]);
+      insertEntriesBulk(newEntries, userId).catch(() => setSaveError(true));
       learnDescriptionRule(fDesc, fType, fCategory, fSubcategory);
       resetFormFields();
       return;
@@ -418,6 +428,7 @@ export default function App({ session }) {
       date: fDate,
     };
     setEntries((prev) => [entry, ...prev]);
+    insertEntry(entry, userId).catch(() => setSaveError(true));
     learnDescriptionRule(fDesc, fType, fCategory, fSubcategory);
     resetFormFields();
   }
@@ -426,12 +437,13 @@ export default function App({ session }) {
     const amountNum = parseFloat(String(fAmount).replace(",", "."));
     const original = entries.find((e) => e.id === editingEntryId);
     if (!original) { resetFormFields(); return; }
-    setEntries((prev) => prev.map((e) => {
+    const changed = [];
+    const nextEntries = entries.map((e) => {
       if (e.installmentGroupId !== original.installmentGroupId) return e;
       if (scope === "single" && e.id !== original.id) return e;
       if (scope === "future" && e.date < original.date) return e;
       const isThisOne = e.id === original.id;
-      return {
+      const next = {
         ...e,
         type: fType,
         amount: amountNum,
@@ -443,18 +455,24 @@ export default function App({ session }) {
         notes: fNotes.trim(),
         date: isThisOne ? fDate : e.date,
       };
-    }));
+      changed.push(next);
+      return next;
+    });
+    setEntries(nextEntries);
+    Promise.all(changed.map((e) => updateEntry(e.id, e, userId))).catch(() => setSaveError(true));
     learnDescriptionRule(fDesc, fType, fCategory, fSubcategory);
     resetFormFields();
   }
 
   function deleteEntry(id) {
     setEntries((prev) => prev.filter((e) => e.id !== id));
+    dbDeleteEntry(id).catch(() => setSaveError(true));
   }
   function cancelRemainingInstallments(entry) {
     setEntries((prev) => prev.filter((e) =>
       !(e.installmentGroupId === entry.installmentGroupId && e.date >= entry.date)
     ));
+    deleteEntriesForInstallmentCancel(userId, entry.installmentGroupId, entry.date).catch(() => setSaveError(true));
   }
 
   function setLimit(category, value) {
