@@ -178,6 +178,7 @@ export default function App({ session }) {
   const [newAccountName, setNewAccountName] = useState("");
   const [newAccountKind, setNewAccountKind] = useState("corrente");
   const [newAccountCurrency, setNewAccountCurrency] = useState("BRL");
+  const [newAccountInitialBalance, setNewAccountInitialBalance] = useState("");
   const [editingAccount, setEditingAccount] = useState(null);
 
   const [importOpen, setImportOpen] = useState(false);
@@ -550,11 +551,15 @@ export default function App({ session }) {
     updateCategorySubcategories(userId, type, category, nextList).catch(() => setSaveError(true));
   }
 
-  function addAccount(name, kind, currency) {
+  function addAccount(name, kind, currency, initialBalance) {
     const clean = name.trim();
     if (!clean) return;
     if (accounts.some((a) => a.name === clean)) return;
-    const draft = { name: clean, kind: kind || "corrente", currency: currency || "BRL", active: true, initialBalance: 0 };
+    const parsedBalance = parseFloat(String(initialBalance ?? "").replace(",", "."));
+    const draft = {
+      name: clean, kind: kind || "corrente", currency: currency || "BRL", active: true,
+      initialBalance: isNaN(parsedBalance) ? 0 : parsedBalance,
+    };
     insertAccount(draft, userId)
       .then((saved) => setAccounts((prev) => [...prev, saved]))
       .catch(() => setSaveError(true));
@@ -2617,13 +2622,17 @@ export default function App({ session }) {
               </div>
             ))}
 
-            <div className="bc-add-cat-row">
+            <div className="bc-add-cat-row" style={{ flexWrap: "wrap" }}>
               <input
                 type="text" placeholder="nome da conta" value={newAccountName}
                 onChange={(e) => setNewAccountName(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") { addAccount(newAccountName, newAccountKind, newAccountCurrency); setNewAccountName(""); }
+                  if (e.key === "Enter") {
+                    addAccount(newAccountName, newAccountKind, newAccountCurrency, newAccountInitialBalance);
+                    setNewAccountName(""); setNewAccountInitialBalance("");
+                  }
                 }}
+                style={{ minWidth: 140 }}
               />
               <select value={newAccountKind} onChange={(e) => setNewAccountKind(e.target.value)}>
                 <option value="corrente">Conta corrente</option>
@@ -2633,7 +2642,21 @@ export default function App({ session }) {
                 <option value="BRL">R$ Real</option>
                 <option value="USD">US$ Dólar</option>
               </select>
-              <button onClick={() => { addAccount(newAccountName, newAccountKind, newAccountCurrency); setNewAccountName(""); }}>
+              <input
+                type="text" inputMode="decimal" placeholder="saldo inicial (opcional)" value={newAccountInitialBalance}
+                onChange={(e) => setNewAccountInitialBalance(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    addAccount(newAccountName, newAccountKind, newAccountCurrency, newAccountInitialBalance);
+                    setNewAccountName(""); setNewAccountInitialBalance("");
+                  }
+                }}
+                style={{ flex: "0 0 140px" }}
+              />
+              <button onClick={() => {
+                addAccount(newAccountName, newAccountKind, newAccountCurrency, newAccountInitialBalance);
+                setNewAccountName(""); setNewAccountInitialBalance("");
+              }}>
                 <Plus size={14} style={{ verticalAlign: -2 }} /> Conta
               </button>
             </div>
