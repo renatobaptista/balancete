@@ -69,11 +69,16 @@ export default function Auth() {
           background: var(--income-soft); color: var(--income); border: 1px solid var(--income);
           border-radius: 8px; padding: 10px 12px; font-size: 12.5px; margin-bottom: 14px; display: flex; gap: 8px; align-items: flex-start;
         }
+        .bc-auth-dev-banner {
+          background: var(--paper-card); border: 1px solid var(--rule-strong); color: var(--ink-soft);
+          border-radius: 8px; padding: 9px 12px; font-size: 12px; margin-bottom: 16px; text-align: center;
+        }
         .bc-auth-spin { animation: bc-auth-spin-kf 0.8s linear infinite; }
         @keyframes bc-auth-spin-kf { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       `}</style>
       <p className="bc-auth-title">Balancete</p>
       <p className="bc-auth-subtitle">Seu livro-caixa pessoal.</p>
+      <div className="bc-auth-dev-banner">🚧 Este site ainda está em desenvolvimento.</div>
       <div className="bc-auth-card">
         {error && <div className="bc-auth-error"><XCircle size={15} style={{ flexShrink: 0, marginTop: 1 }} />{error}</div>}
         {notice && <div className="bc-auth-notice"><CheckCircle2 size={15} style={{ flexShrink: 0, marginTop: 1 }} />{notice}</div>}
