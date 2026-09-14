@@ -1,6 +1,18 @@
 import { useState } from "react";
-import { LogIn, UserPlus, XCircle, CheckCircle2, Loader2 } from "lucide-react";
+import {
+  LogIn, UserPlus, XCircle, CheckCircle2, Loader2,
+  Wallet, Settings, Landmark, Target, TrendingUp, Upload,
+} from "lucide-react";
 import { supabase } from "./lib/supabaseClient";
+
+const FEATURES = [
+  { icon: Wallet, title: "Lançamentos completos", copy: "Entradas, saídas, investimentos e transferências, incluindo compras parceladas." },
+  { icon: Settings, title: "Categorias flexíveis", copy: "Organize do seu jeito, com categorias e subcategorias." },
+  { icon: Landmark, title: "Contas e cartões", copy: "Contas correntes e cartões de crédito, em real ou dólar." },
+  { icon: Target, title: "Metas", copy: "Limite de gastos por categoria e meta de investimento." },
+  { icon: TrendingUp, title: "Relatório mês a mês", copy: "Acompanhe a evolução dos seus números ao longo do tempo." },
+  { icon: Upload, title: "Importação de planilha", copy: "Traga anos de histórico de outro app financeiro." },
+];
 
 export default function Auth() {
   const [mode, setMode] = useState("login");
@@ -41,9 +53,10 @@ export default function Auth() {
           --rule: #D9D2BE; --rule-strong: #C3BA9F; --income: #2F6F4F; --income-soft: #E3EEE6;
           --expense: #A6432C; --expense-soft: #F3E3DC;
           font-family: 'Inter', sans-serif; color: var(--ink); background: var(--paper);
-          padding: 28px; border-radius: 14px; max-width: 420px; margin: 60px auto;
+          padding: 28px; border-radius: 14px; max-width: 880px; margin: 60px auto;
         }
         .bc-auth-root * { box-sizing: border-box; }
+        .bc-auth-top { max-width: 420px; margin: 0 auto; }
         .bc-auth-title { font-family: Georgia, serif; font-weight: 700; font-size: 26px; margin: 0 0 4px; }
         .bc-auth-subtitle { font-size: 12.5px; color: var(--ink-soft); margin-bottom: 20px; }
         .bc-auth-card { background: var(--paper-card); border: 1px solid var(--rule); border-radius: 12px; padding: 20px; }
@@ -77,35 +90,66 @@ export default function Auth() {
         .bc-auth-dev-banner div { margin-top: 2px; }
         .bc-auth-spin { animation: bc-auth-spin-kf 0.8s linear infinite; }
         @keyframes bc-auth-spin-kf { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .bc-auth-features { margin-top: 40px; }
+        .bc-auth-features-title {
+          font-family: Georgia, serif; font-size: 18px; font-weight: 700; text-align: center; margin: 0 0 20px;
+        }
+        .bc-auth-feature-grid {
+          display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px;
+        }
+        .bc-auth-feature-tile {
+          background: var(--paper-card); border: 1px solid var(--rule); border-radius: 12px; padding: 16px;
+        }
+        .bc-auth-feature-icon {
+          width: 32px; height: 32px; border-radius: 8px; background: var(--income-soft); color: var(--income);
+          display: flex; align-items: center; justify-content: center; margin-bottom: 10px;
+        }
+        .bc-auth-feature-title { font-size: 13.5px; font-weight: 600; margin: 0 0 4px; }
+        .bc-auth-feature-copy { font-size: 12.5px; color: var(--ink-soft); margin: 0; line-height: 1.45; }
       `}</style>
-      <p className="bc-auth-title">Balancete</p>
-      <p className="bc-auth-subtitle">Seu livro-caixa pessoal.</p>
-      <div className="bc-auth-dev-banner">
-        🚧 Este site ainda está em desenvolvimento.
-        <div>Dúvidas ou sugestões? <a href="mailto:renatoservicosti@gmail.com">renatoservicosti@gmail.com</a></div>
+      <div className="bc-auth-top">
+        <p className="bc-auth-title">Balancete</p>
+        <p className="bc-auth-subtitle">Seu livro-caixa pessoal.</p>
+        <div className="bc-auth-dev-banner">
+          🚧 Este site ainda está em desenvolvimento.
+          <div>Dúvidas ou sugestões? <a href="mailto:renatoservicosti@gmail.com">renatoservicosti@gmail.com</a></div>
+        </div>
+        <div className="bc-auth-card">
+          {error && <div className="bc-auth-error"><XCircle size={15} style={{ flexShrink: 0, marginTop: 1 }} />{error}</div>}
+          {notice && <div className="bc-auth-notice"><CheckCircle2 size={15} style={{ flexShrink: 0, marginTop: 1 }} />{notice}</div>}
+          <div className="bc-auth-field">
+            <label>E-mail</label>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="voce@email.com" />
+          </div>
+          <div className="bc-auth-field">
+            <label>Senha</label>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="mínimo 6 caracteres"
+              onKeyDown={(e) => { if (e.key === "Enter" && email && password) handleAuth(); }} />
+          </div>
+          <button className="bc-auth-btn" disabled={loading || !email || !password} onClick={handleAuth}>
+            {loading ? <Loader2 size={15} className="bc-auth-spin" /> : mode === "login" ? <LogIn size={15} /> : <UserPlus size={15} />}
+            {mode === "login" ? "Entrar" : "Criar conta"}
+          </button>
+          <div className="bc-auth-switch">
+            {mode === "login" ? (
+              <>Ainda não tem conta? <button onClick={() => { setMode("signup"); setError(""); setNotice(""); }}>Criar conta</button></>
+            ) : (
+              <>Já tem conta? <button onClick={() => { setMode("login"); setError(""); setNotice(""); }}>Entrar</button></>
+            )}
+          </div>
+        </div>
       </div>
-      <div className="bc-auth-card">
-        {error && <div className="bc-auth-error"><XCircle size={15} style={{ flexShrink: 0, marginTop: 1 }} />{error}</div>}
-        {notice && <div className="bc-auth-notice"><CheckCircle2 size={15} style={{ flexShrink: 0, marginTop: 1 }} />{notice}</div>}
-        <div className="bc-auth-field">
-          <label>E-mail</label>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="voce@email.com" />
-        </div>
-        <div className="bc-auth-field">
-          <label>Senha</label>
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="mínimo 6 caracteres"
-            onKeyDown={(e) => { if (e.key === "Enter" && email && password) handleAuth(); }} />
-        </div>
-        <button className="bc-auth-btn" disabled={loading || !email || !password} onClick={handleAuth}>
-          {loading ? <Loader2 size={15} className="bc-auth-spin" /> : mode === "login" ? <LogIn size={15} /> : <UserPlus size={15} />}
-          {mode === "login" ? "Entrar" : "Criar conta"}
-        </button>
-        <div className="bc-auth-switch">
-          {mode === "login" ? (
-            <>Ainda não tem conta? <button onClick={() => { setMode("signup"); setError(""); setNotice(""); }}>Criar conta</button></>
-          ) : (
-            <>Já tem conta? <button onClick={() => { setMode("login"); setError(""); setNotice(""); }}>Entrar</button></>
-          )}
+
+      <div className="bc-auth-features">
+        <p className="bc-auth-features-title">O que você pode fazer no Balancete</p>
+        <div className="bc-auth-feature-grid">
+          {FEATURES.map(({ icon: Icon, title, copy }) => (
+            <div className="bc-auth-feature-tile" key={title}>
+              <div className="bc-auth-feature-icon"><Icon size={17} /></div>
+              <p className="bc-auth-feature-title">{title}</p>
+              <p className="bc-auth-feature-copy">{copy}</p>
+            </div>
+          ))}
         </div>
       </div>
     </div>
