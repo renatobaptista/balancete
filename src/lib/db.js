@@ -168,6 +168,16 @@ export async function deleteAllCategories(userId) {
   if (error) throw error;
 }
 
+export async function insertCategoriesBulk(userId, categoriesObject) {
+  const rows = [];
+  Object.entries(categoriesObject).forEach(([type, cats]) => {
+    Object.entries(cats).forEach(([name, subcategories]) => rows.push({ user_id: userId, type, name, subcategories }));
+  });
+  if (rows.length === 0) return;
+  const { error } = await supabase.from("categories").insert(rows);
+  if (error) throw error;
+}
+
 // --- goals ---
 
 export async function upsertGoals(goals, userId) {

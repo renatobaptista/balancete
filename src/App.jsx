@@ -16,7 +16,7 @@ import {
   insertEntry, insertEntriesBulk, updateEntry, deleteEntry as dbDeleteEntry, deleteEntriesForInstallmentCancel,
   deleteAllEntries,
   insertCategory, deleteCategoryRow, renameCategoryRow, updateCategorySubcategories, renameCategoryInEntries,
-  deleteAllCategories,
+  deleteAllCategories, insertCategoriesBulk,
   upsertGoals,
   insertAccount, updateAccount, deleteAccount as dbDeleteAccount, renameAccountInEntries, deleteAllAccounts,
   upsertRule, deleteRule, bulkUpsertRules, deleteAllRules,
@@ -704,17 +704,20 @@ export default function App({ session }) {
     const reader = new FileReader();
     reader.onload = (evt) => {
       (async () => {
+        // Step 1: parse and validate the file. Any failure here happens before we've
+        // touched Supabase, so it's safe to just tell the user the file looks wrong.
+        let parsed, nextGoals, nextCategories, nextAccounts, nextImportRules, nextImportDescriptionRules, normalizedEntries;
         try {
-          const parsed = JSON.parse(evt.target.result);
+          parsed = JSON.parse(evt.target.result);
           if (!parsed || !Array.isArray(parsed.entries)) {
             setRestoreError("Esse arquivo não parece ser um backup válido do Balancete.");
             return;
           }
-          const nextGoals = parsed.goals || { limits: {}, investTarget: 0 };
-          const nextCategories = parsed.categories || DEFAULT_CATEGORIES;
-          const nextAccounts = (parsed.accounts || []).map((a) => ({ active: true, initialBalance: 0, ...a }));
-          const nextImportRules = parsed.importRules || {};
-          const nextImportDescriptionRules = parsed.importDescriptionRules || {};
+          nextGoals = parsed.goals || { limits: {}, investTarget: 0 };
+          nextCategories = parsed.categories || DEFAULT_CATEGORIES;
+          nextAccounts = (parsed.accounts || []).map((a) => ({ active: true, initialBalance: 0, ...a }));
+          nextImportRules = parsed.importRules || {};
+          nextImportDescriptionRules = parsed.importDescriptionRules || {};
 
           // Backups exported before this migration (from the Claude.ai sandbox era) carry
           // non-UUID ids from the old uid(). entries.id and entries.installment_group_id are
@@ -722,7 +725,7 @@ export default function App({ session }) {
           // preserving the installmentGroupId link between entries in the same group.
           const isUuid = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s || ""));
           const groupIdMap = {};
-          const normalizedEntries = (parsed.entries || []).map((e) => {
+          normalizedEntries = (parsed.entries || []).map((e) => {
             const next = { ...e };
             if (!isUuid(next.id)) next.id = uid();
             if (next.installmentGroupId && !isUuid(next.installmentGroupId)) {
@@ -731,18 +734,21 @@ export default function App({ session }) {
             }
             return next;
           });
+        } catch (e) {
+          setRestoreError("Não conseguimos ler esse arquivo. Confira se é um backup .json exportado pelo Balancete.");
+          return;
+        }
 
+        // Step 2: point of no return — the user's existing Supabase data gets wiped here.
+        // From this point on, any failure means the restore is incomplete, not just unread.
+        try {
           await Promise.all([
             deleteAllEntries(userId), deleteAllAccounts(userId), deleteAllCategories(userId), deleteAllRules(userId),
           ]);
 
-          const categoryRows = [];
-          Object.entries(nextCategories).forEach(([type, cats]) => {
-            Object.entries(cats).forEach(([name, subcategories]) => categoryRows.push({ user_id: userId, type, name, subcategories }));
-          });
           const savedAccounts = await Promise.all(nextAccounts.map((a) => insertAccount(a, userId)));
           await Promise.all([
-            categoryRows.length ? supabase.from("categories").insert(categoryRows) : Promise.resolve(),
+            insertCategoriesBulk(userId, nextCategories),
             insertEntriesBulk(normalizedEntries, userId),
             upsertGoals(nextGoals, userId),
             bulkUpsertRules("import_rules", userId, nextImportRules),
@@ -757,7 +763,7 @@ export default function App({ session }) {
           setImportDescriptionRules(nextImportDescriptionRules);
           setRestoreSuccess(`Backup restaurado: ${parsed.entries.length} lançamentos carregados.`);
         } catch (e) {
-          setRestoreError("Não conseguimos ler esse arquivo. Confira se é um backup .json exportado pelo Balancete.");
+          setRestoreError("A restauração falhou no meio do processo. Seus dados podem estar incompletos — guarde o arquivo de backup e tente novamente.");
         }
       })();
     };
@@ -784,13 +790,8 @@ export default function App({ session }) {
       deleteAllCategories(userId),
       deleteAllRules(userId),
       upsertGoals({ limits: {}, investTarget: 0 }, userId),
-    ]).then(() => {
-      const rows = [];
-      Object.entries(DEFAULT_CATEGORIES).forEach(([type, cats]) => {
-        Object.entries(cats).forEach(([name, subcategories]) => rows.push({ user_id: userId, type, name, subcategories }));
-      });
-      return supabase.from("categories").insert(rows);
-    }).catch(() => setSaveError(true));
+    ]).then(() => insertCategoriesBulk(userId, DEFAULT_CATEGORIES))
+      .catch(() => setSaveError(true));
   }
 
   function resetImport() {
@@ -1190,34 +1191,12 @@ export default function App({ session }) {
   const isFirstRun = loaded && entries.length === 0 && accounts.length === 0;
 
   const storageInfo = useMemo(() => {
-    const byYear = {};
-    let totalEntryBytes = 0;
-    entries.forEach((e) => {
-      const year = (e.date || "").slice(0, 4) || "sem-data";
-      if (!byYear[year]) byYear[year] = [];
-      byYear[year].push(e);
-    });
-    let biggestYear = null, biggestBytes = 0;
-    Object.entries(byYear).forEach(([year, list]) => {
-      const bytes = new Blob([JSON.stringify(list)]).size;
-      totalEntryBytes += bytes;
-      if (bytes > biggestBytes) { biggestBytes = bytes; biggestYear = year; }
-    });
-    const mainBytes = new Blob([JSON.stringify({ goals, categories, accounts, importRules, importDescriptionRules })]).size;
-    const totalBytes = totalEntryBytes + mainBytes;
-    const limitBytes = 5 * 1024 * 1024;
-    const pct = Math.min(100, (biggestBytes / limitBytes) * 100);
+    const years = new Set(entries.map((e) => (e.date || "").slice(0, 4)).filter(Boolean));
     return {
-      totalBytes,
-      totalKb: totalBytes / 1024,
-      biggestYear,
-      biggestBytes,
-      pct,
       entryCount: entries.length,
-      yearCount: Object.keys(byYear).length,
-      warn: pct >= 60,
+      yearCount: years.size,
     };
-  }, [entries, goals, categories, accounts, importRules, importDescriptionRules]);
+  }, [entries]);
 
   const allAccounts = useMemo(
     () => sortPt(Array.from(new Set([...accounts.map((a) => a.name), ...entries.map((e) => e.account).filter(Boolean)]))),
@@ -2672,27 +2651,11 @@ export default function App({ session }) {
 
             <div className="bc-storage-box">
               <div className="bc-storage-top">
-                <span>{storageInfo.entryCount} lançamentos em {storageInfo.yearCount} ano(s) · {storageInfo.totalKb < 1024 ? `${storageInfo.totalKb.toFixed(0)} KB` : `${(storageInfo.totalKb / 1024).toFixed(2)} MB`} no total</span>
-              </div>
-              <div className="bc-storage-top">
-                <span>Ano mais cheio: {storageInfo.biggestYear || "—"} ({(storageInfo.biggestBytes / 1024).toFixed(0)} KB)</span>
-                <span>{storageInfo.pct.toFixed(1)}% de 5 MB nesse ano</span>
-              </div>
-              <div className="bc-progress-track">
-                <div
-                  className="bc-progress-fill"
-                  style={{ width: storageInfo.pct + "%", background: storageInfo.warn ? "var(--expense)" : "var(--income)" }}
-                />
+                <span>{storageInfo.entryCount} lançamentos guardados em {storageInfo.yearCount} ano(s)</span>
               </div>
               <p className="bc-import-help" style={{ marginTop: 8 }}>
-                Desde a versão atual, os lançamentos ficam guardados <strong>separados por ano</strong> — cada ano é uma "gaveta" própria, então o limite de 5 MB vale por ano, não pra tudo somado. Isso evita que anos antigos travem o espaço de anos novos.
+                Seus dados ficam salvos na nuvem (Supabase) e sincronizados automaticamente — não há limite de espaço nem necessidade de backups manuais para não perder dados. Mesmo assim, é uma boa prática baixar um backup de vez em quando como cópia independente.
               </p>
-              {storageInfo.warn && (
-                <p className="bc-import-help" style={{ color: "var(--expense)", marginTop: 8 }}>
-                  <AlertTriangle size={14} style={{ verticalAlign: -2, marginRight: 4 }} />
-                  O ano de {storageInfo.biggestYear} já está usando uma boa parte do espaço disponível. Considere fazer um backup regularmente.
-                </p>
-              )}
             </div>
 
             <div className="bc-danger-option">
