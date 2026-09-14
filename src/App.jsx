@@ -37,8 +37,6 @@ const MONTH_NAMES = [
 ];
 const MONTH_ABBR = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
-const STORAGE_KEY = "balancete-data";
-
 function fmt(n, currency = "BRL") {
   return (Number(n) || 0).toLocaleString(currency === "USD" ? "en-US" : "pt-BR", { style: "currency", currency });
 }
