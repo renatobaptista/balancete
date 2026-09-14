@@ -14,9 +14,12 @@ import { DEFAULT_CATEGORIES } from "./lib/defaultCategories";
 import {
   fetchAll,
   insertEntry, insertEntriesBulk, updateEntry, deleteEntry as dbDeleteEntry, deleteEntriesForInstallmentCancel,
+  deleteAllEntries,
   insertCategory, deleteCategoryRow, renameCategoryRow, updateCategorySubcategories, renameCategoryInEntries,
+  deleteAllCategories,
   upsertGoals,
-  insertAccount, updateAccount, deleteAccount as dbDeleteAccount, renameAccountInEntries,
+  insertAccount, updateAccount, deleteAccount as dbDeleteAccount, renameAccountInEntries, deleteAllAccounts,
+  upsertRule, deleteRule, bulkUpsertRules, deleteAllRules,
 } from "./lib/db";
 import { supabase } from "./lib/supabaseClient";
 
@@ -304,7 +307,9 @@ export default function App({ session }) {
     const desc = (description || "").trim();
     if (!desc) return;
     const key = normalizeHeader(desc);
-    setImportDescriptionRules((prev) => ({ ...prev, [key]: { type, category, subcategory, ignore: false } }));
+    const data = { type, category, subcategory, ignore: false };
+    setImportDescriptionRules((prev) => ({ ...prev, [key]: data }));
+    upsertRule("import_description_rules", userId, key, data).catch(() => setSaveError(true));
   }
 
   function saveEntry() {
@@ -663,6 +668,7 @@ export default function App({ session }) {
     setAccountFilterDashboard("");
     setAccountFilterReport("");
     setResetConfirmOpen(false);
+    deleteAllEntries(userId).catch(() => setSaveError(true));
   }
 
   function buildBackupPayload() {
@@ -699,22 +705,63 @@ export default function App({ session }) {
     setRestoreSuccess("");
     const reader = new FileReader();
     reader.onload = (evt) => {
-      try {
-        const parsed = JSON.parse(evt.target.result);
-        if (!parsed || !Array.isArray(parsed.entries)) {
-          setRestoreError("Esse arquivo não parece ser um backup válido do Balancete.");
-          return;
+      (async () => {
+        try {
+          const parsed = JSON.parse(evt.target.result);
+          if (!parsed || !Array.isArray(parsed.entries)) {
+            setRestoreError("Esse arquivo não parece ser um backup válido do Balancete.");
+            return;
+          }
+          const nextGoals = parsed.goals || { limits: {}, investTarget: 0 };
+          const nextCategories = parsed.categories || DEFAULT_CATEGORIES;
+          const nextAccounts = (parsed.accounts || []).map((a) => ({ active: true, initialBalance: 0, ...a }));
+          const nextImportRules = parsed.importRules || {};
+          const nextImportDescriptionRules = parsed.importDescriptionRules || {};
+
+          // Backups exported before this migration (from the Claude.ai sandbox era) carry
+          // non-UUID ids from the old uid(). entries.id and entries.installment_group_id are
+          // Postgres uuid columns, so any id that isn't a valid UUID must be replaced —
+          // preserving the installmentGroupId link between entries in the same group.
+          const isUuid = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s || ""));
+          const groupIdMap = {};
+          const normalizedEntries = (parsed.entries || []).map((e) => {
+            const next = { ...e };
+            if (!isUuid(next.id)) next.id = uid();
+            if (next.installmentGroupId && !isUuid(next.installmentGroupId)) {
+              if (!groupIdMap[next.installmentGroupId]) groupIdMap[next.installmentGroupId] = uid();
+              next.installmentGroupId = groupIdMap[next.installmentGroupId];
+            }
+            return next;
+          });
+
+          await Promise.all([
+            deleteAllEntries(userId), deleteAllAccounts(userId), deleteAllCategories(userId), deleteAllRules(userId),
+          ]);
+
+          const categoryRows = [];
+          Object.entries(nextCategories).forEach(([type, cats]) => {
+            Object.entries(cats).forEach(([name, subcategories]) => categoryRows.push({ user_id: userId, type, name, subcategories }));
+          });
+          const savedAccounts = await Promise.all(nextAccounts.map((a) => insertAccount(a, userId)));
+          await Promise.all([
+            categoryRows.length ? supabase.from("categories").insert(categoryRows) : Promise.resolve(),
+            insertEntriesBulk(normalizedEntries, userId),
+            upsertGoals(nextGoals, userId),
+            bulkUpsertRules("import_rules", userId, nextImportRules),
+            bulkUpsertRules("import_description_rules", userId, nextImportDescriptionRules),
+          ]);
+
+          setEntries(normalizedEntries);
+          setGoals(nextGoals);
+          setCategories(nextCategories);
+          setAccounts(savedAccounts);
+          setImportRules(nextImportRules);
+          setImportDescriptionRules(nextImportDescriptionRules);
+          setRestoreSuccess(`Backup restaurado: ${parsed.entries.length} lançamentos carregados.`);
+        } catch (e) {
+          setRestoreError("Não conseguimos ler esse arquivo. Confira se é um backup .json exportado pelo Balancete.");
         }
-        setEntries(parsed.entries || []);
-        setGoals(parsed.goals || { limits: {}, investTarget: 0 });
-        setCategories(parsed.categories || DEFAULT_CATEGORIES);
-        setAccounts((parsed.accounts || []).map((a) => ({ active: true, initialBalance: 0, ...a })));
-        setImportRules(parsed.importRules || {});
-        setImportDescriptionRules(parsed.importDescriptionRules || {});
-        setRestoreSuccess(`Backup restaurado: ${parsed.entries.length} lançamentos carregados.`);
-      } catch (e) {
-        setRestoreError("Não conseguimos ler esse arquivo. Confira se é um backup .json exportado pelo Balancete.");
-      }
+      })();
     };
     reader.readAsText(file);
   }
@@ -733,6 +780,19 @@ export default function App({ session }) {
     setManagerOpen(false);
     setAccountManagerOpen(false);
     setImportOpen(false);
+    Promise.all([
+      deleteAllEntries(userId),
+      deleteAllAccounts(userId),
+      deleteAllCategories(userId),
+      deleteAllRules(userId),
+      upsertGoals({ limits: {}, investTarget: 0 }, userId),
+    ]).then(() => {
+      const rows = [];
+      Object.entries(DEFAULT_CATEGORIES).forEach(([type, cats]) => {
+        Object.entries(cats).forEach(([name, subcategories]) => rows.push({ user_id: userId, type, name, subcategories }));
+      });
+      return supabase.from("categories").insert(rows);
+    }).catch(() => setSaveError(true));
   }
 
   function resetImport() {
@@ -836,6 +896,7 @@ export default function App({ session }) {
       delete next[key];
       return next;
     });
+    deleteRule("import_rules", userId, key).catch(() => setSaveError(true));
     updateImportCatMap(rawCat, { fromRule: false });
   }
 
@@ -1075,17 +1136,34 @@ export default function App({ session }) {
 
     setCategories(categoriesPatch);
     setEntries((prev) => [...newEntries, ...prev]);
-    setImportRules((prev) => {
-      const next = { ...prev };
-      Object.entries(importCatMap).forEach(([rawCat, m]) => {
-        next[normalizeHeader(rawCat)] = {
-          type: m.type, category: m.category, subcategory: m.subcategory, account: m.account || "", ignore: !!m.ignore,
-        };
+    insertEntriesBulk(newEntries, userId).catch(() => setSaveError(true));
+
+    const categoryDiff = [];
+    Object.entries(categoriesPatch).forEach(([type, cats]) => {
+      Object.entries(cats).forEach(([name, subs]) => {
+        const before = categories[type]?.[name];
+        if (before === undefined) categoryDiff.push({ op: "insert", type, name, subs });
+        else if (before.length !== subs.length) categoryDiff.push({ op: "update", type, name, subs });
       });
-      return next;
     });
+    Promise.all(categoryDiff.map((c) =>
+      c.op === "insert"
+        ? insertCategory(userId, c.type, c.name).then(() => updateCategorySubcategories(userId, c.type, c.name, c.subs))
+        : updateCategorySubcategories(userId, c.type, c.name, c.subs)
+    )).catch(() => setSaveError(true));
+
+    const nextImportRules = { ...importRules };
+    Object.entries(importCatMap).forEach(([rawCat, m]) => {
+      nextImportRules[normalizeHeader(rawCat)] = {
+        type: m.type, category: m.category, subcategory: m.subcategory, account: m.account || "", ignore: !!m.ignore,
+      };
+    });
+    setImportRules(nextImportRules);
+    bulkUpsertRules("import_rules", userId, nextImportRules).catch(() => setSaveError(true));
+
     if (Object.keys(importDescriptionOverrides).length > 0) {
       setImportDescriptionRules((prev) => ({ ...prev, ...importDescriptionOverrides }));
+      bulkUpsertRules("import_description_rules", userId, importDescriptionOverrides).catch(() => setSaveError(true));
     }
     const discovered = Array.from(new Set(
       newEntries.flatMap((e) => e.type === "transfer" ? [e.fromAccount, e.toAccount] : [e.account]).filter(Boolean)
@@ -1095,7 +1173,9 @@ export default function App({ session }) {
       .filter((n) => !knownAccountNames.has(n) && importAccountMap[n]?.include !== false)
       .map((name) => ({ name, kind: importAccountMap[name]?.kind || "corrente", active: true, initialBalance: 0 }));
     if (accountAdditions.length > 0) {
-      setAccounts((prev) => [...prev, ...accountAdditions]);
+      Promise.all(accountAdditions.map((a) => insertAccount(a, userId)))
+        .then((saved) => setAccounts((prev) => [...prev, ...saved]))
+        .catch(() => setSaveError(true));
     }
     setImportResult({
       imported: newEntries.length,
