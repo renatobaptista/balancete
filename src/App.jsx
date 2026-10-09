@@ -1027,12 +1027,26 @@ export default function App({ session }) {
 
   function commitImport() {
     const { date, desc, value, category, account } = importColMap;
-    const existingSignatures = new Set(
+    // Contagem de lançamentos já salvos por assinatura: lançamentos idênticos dentro do mesmo
+    // arquivo (ex.: duas compras iguais no mesmo dia) valem cada um; só é duplicado o que já existe.
+    const countSignatures = (list) => {
+      const m = new Map();
+      list.forEach((s) => m.set(s, (m.get(s) || 0) + 1));
+      return m;
+    };
+    const existingSignatures = countSignatures(
       entries.filter((e) => e.type !== "transfer").map((e) => `${e.date}|${e.description}|${e.amount}|${e.type}|${e.account || ""}`)
     );
-    const existingTransferSignatures = new Set(
+    const existingTransferSignatures = countSignatures(
       entries.filter((e) => e.type === "transfer").map((e) => `${e.date}|${e.description}|${e.amount}|${e.fromAccount}|${e.toAccount}`)
     );
+    const seenInFile = new Map();
+    const alreadyStored = (counts, kind, signature) => {
+      const key = `${kind}|${signature}`;
+      const n = (seenInFile.get(key) || 0) + 1;
+      seenInFile.set(key, n);
+      return n <= (counts.get(signature) || 0);
+    };
     const newEntries = [];
     const categoriesPatch = JSON.parse(JSON.stringify(categories));
     let ignored = 0, invalid = 0, duplicates = 0, newCategoriesCount = 0, transfersDetected = 0;
@@ -1082,8 +1096,7 @@ export default function App({ session }) {
           neg.used = true;
           const amount = Math.round(Math.abs(neg.value) * 100) / 100;
           const signature = `${neg.date}|${neg.description}|${amount}|${neg.account}|${match.account}`;
-          if (existingTransferSignatures.has(signature)) { duplicates += 1; return; }
-          existingTransferSignatures.add(signature);
+          if (alreadyStored(existingTransferSignatures, "T", signature)) { duplicates += 1; return; }
           newEntries.push({
             id: uid(),
             type: "transfer",
@@ -1121,8 +1134,7 @@ export default function App({ session }) {
       const accountName = (descOverride && descOverride.account) || mapping.account || accountFromSheet;
 
       const signature = `${parsedDate}|${description}|${amount}|${type}|${accountName}`;
-      if (existingSignatures.has(signature)) { duplicates += 1; return; }
-      existingSignatures.add(signature);
+      if (alreadyStored(existingSignatures, "N", signature)) { duplicates += 1; return; }
 
       if (!categoriesPatch[type][catName]) { categoriesPatch[type][catName] = []; newCategoriesCount += 1; }
       if (subName && !categoriesPatch[type][catName].includes(subName)) {
