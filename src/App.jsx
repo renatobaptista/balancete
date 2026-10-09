@@ -1862,7 +1862,7 @@ export default function App({ session }) {
         <div className="bc-header-right">
           {activeTab === "dashboard" && (
             <div className="bc-month-nav">
-              <button aria-label="Mês anterior" onClick={() => changeMonth(-1)}><ChevronLeft size={16} /></button>
+              <button aria-label="Mês anterior" title="Mês anterior" onClick={() => changeMonth(-1)}><ChevronLeft size={16} /></button>
               <div>
                 <div className="bc-month-label">{MONTH_NAMES[cursor.m]} {cursor.y}</div>
                 {!isCurrentMonth && (
@@ -1871,25 +1871,25 @@ export default function App({ session }) {
                   </div>
                 )}
               </div>
-              <button aria-label="Próximo mês" onClick={() => changeMonth(1)}><ChevronRight size={16} /></button>
+              <button aria-label="Próximo mês" title="Próximo mês" onClick={() => changeMonth(1)}><ChevronRight size={16} /></button>
             </div>
           )}
-          <button className="bc-icon-btn" aria-label="Importar dados" onClick={() => { resetImport(); setImportOpen(true); }}>
+          <button className="bc-icon-btn" aria-label="Importar dados" title="Importar dados (planilha)" onClick={() => { resetImport(); setImportOpen(true); }}>
             <Upload size={16} />
           </button>
-          <button className="bc-icon-btn" aria-label="Gerenciar contas" onClick={() => setAccountManagerOpen(true)}>
+          <button className="bc-icon-btn" aria-label="Gerenciar contas" title="Gerenciar contas" onClick={() => setAccountManagerOpen(true)}>
             <Landmark size={16} />
           </button>
-          <button className="bc-icon-btn" aria-label="Gerenciar categorias" onClick={() => setManagerOpen(true)}>
+          <button className="bc-icon-btn" aria-label="Gerenciar categorias" title="Gerenciar categorias" onClick={() => setManagerOpen(true)}>
             <Settings size={16} />
           </button>
-          <button className="bc-icon-btn" aria-label="Backup e armazenamento" onClick={() => { setRestoreError(""); setRestoreSuccess(""); setBackupOpen(true); }}>
+          <button className="bc-icon-btn" aria-label="Backup e armazenamento" title="Backup e armazenamento" onClick={() => { setRestoreError(""); setRestoreSuccess(""); setBackupOpen(true); }}>
             <HardDrive size={16} />
           </button>
-          <button className="bc-icon-btn bc-icon-btn-danger" aria-label="Apagar dados" onClick={() => setResetConfirmOpen(true)}>
+          <button className="bc-icon-btn bc-icon-btn-danger" aria-label="Apagar dados" title="Apagar dados" onClick={() => setResetConfirmOpen(true)}>
             <RotateCcw size={16} />
           </button>
-          <button className="bc-icon-btn" aria-label="Sair" title={session.user.email} onClick={() => supabase.auth.signOut()}>
+          <button className="bc-icon-btn" aria-label="Sair" title={`Sair (${session.user.email})`} onClick={() => supabase.auth.signOut()}>
             <LogOut size={16} />
           </button>
         </div>
@@ -2228,10 +2228,10 @@ export default function App({ session }) {
                           ? `${fmt(e.amount, e.fromCurrency)} → ${fmt(e.toAmount, e.toCurrency)}`
                           : fmt(e.amount, e.fromCurrency || "BRL")}
                       </div>
-                      <button className="bc-ledger-edit" aria-label="Editar lançamento" onClick={() => openEditEntryForm(e)}>
+                      <button className="bc-ledger-edit" aria-label="Editar lançamento" title="Editar lançamento" onClick={() => openEditEntryForm(e)}>
                         <Pencil size={13} />
                       </button>
-                      <button className="bc-ledger-del" aria-label="Excluir lançamento" onClick={() => deleteEntry(e.id)}>
+                      <button className="bc-ledger-del" aria-label="Excluir lançamento" title="Excluir lançamento" onClick={() => deleteEntry(e.id)}>
                         <Trash2 size={14} />
                       </button>
                     </div>
@@ -2267,10 +2267,10 @@ export default function App({ session }) {
                     <div className="bc-ledger-amount" style={{ color: meta.color }}>
                       {e.type === "income" ? "+" : "−"} {fmt(e.amount, e.currency || "BRL")}
                     </div>
-                    <button className="bc-ledger-edit" aria-label="Editar lançamento" onClick={() => openEditEntryForm(e)}>
+                    <button className="bc-ledger-edit" aria-label="Editar lançamento" title="Editar lançamento" onClick={() => openEditEntryForm(e)}>
                       <Pencil size={13} />
                     </button>
-                    <button className="bc-ledger-del" aria-label="Excluir lançamento" onClick={() => deleteEntry(e.id)}>
+                    <button className="bc-ledger-del" aria-label="Excluir lançamento" title="Excluir lançamento" onClick={() => deleteEntry(e.id)}>
                       <Trash2 size={14} />
                     </button>
                   </div>
