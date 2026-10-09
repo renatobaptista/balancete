@@ -1852,12 +1852,6 @@ export default function App({ session }) {
         .bc-acct-msg.error { color: var(--expense); }
         .bc-acct-danger { background: var(--expense-soft); border-radius: 10px; padding: 12px 14px; margin-top: 14px; border-top: none; }
         @media (max-width: 520px) { .bc-acct-grid { grid-template-columns: 1fr; } }
-        .bc-default-account-row { margin-bottom: 14px; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 10px; background: var(--paper); }
-        .bc-default-account-row label { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink); }
-        .bc-default-account-row select {
-          padding: 6px 8px; border-radius: 7px; border: 1px solid var(--rule-strong);
-          background: var(--paper-card); font-size: 12.5px; color: var(--ink); max-width: 100%;
-        }
 
         .bc-report-controls { display: flex; gap: 14px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
         .bc-report-controls label { font-size: 12px; color: var(--ink-soft); margin-right: 6px; }
@@ -2700,20 +2694,6 @@ export default function App({ session }) {
               <p className="bc-import-help">Nenhuma conta cadastrada ainda.</p>
             )}
 
-            {accounts.length > 0 && (
-              <div className="bc-default-account-row">
-                <label>
-                  Conta ao abrir o app
-                  <select value={defaultAccount} onChange={(e) => saveDefaultAccount(e.target.value)}>
-                    <option value="">Todas as contas</option>
-                    {[...accounts].filter((a) => a.active !== false).sort((a, b) => a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" })).map((a) => (
-                      <option key={a.name} value={a.name}>{a.name}</option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            )}
-
             {[...accounts].sort((a, b) => a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" })).map((acc) => (
               <div className="bc-cat-block" key={acc.name}>
                 <div className="bc-cat-head">
@@ -2947,6 +2927,21 @@ export default function App({ session }) {
                 <button className="bc-btn-ghost" onClick={changePassword}>Alterar senha</button>
                 {passwordMsg && <span className={`bc-acct-msg ${passwordMsg.type}`}>{passwordMsg.text}</span>}
               </div>
+            </div>
+
+            <div className="bc-acct-section">
+              <h3>Preferências</h3>
+              <div className="bc-acct-grid">
+                <label>Conta ao abrir o app
+                  <select value={defaultAccount} onChange={(e) => saveDefaultAccount(e.target.value)}>
+                    <option value="">Todas as contas</option>
+                    {[...accounts].filter((a) => a.active !== false).sort((a, b) => a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" })).map((a) => (
+                      <option key={a.name} value={a.name}>{a.name}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <p className="bc-import-help" style={{ marginTop: 8 }}>Salva automaticamente ao escolher. Vale no computador e no celular.</p>
             </div>
 
             <div className="bc-acct-section bc-acct-danger">
