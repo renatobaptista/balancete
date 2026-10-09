@@ -2189,7 +2189,7 @@ export default function App({ session }) {
                 {accountFilterDashboard
                   ? <>Saldo atual em {accountFilterDashboard}: <strong>{fmt(getAccountBalance(accountFilterDashboard), getAccountCurrency(accountFilterDashboard))}</strong></>
                   : <>Saldo atual (todas as contas): <strong>{fmt(balanceToday, dashboardCurrency)}</strong></>}
-                <span className="bc-ledger-until-today"> · até hoje</span>
+                <span className="bc-ledger-until-today"> · {todayISO().split("-").reverse().join("/")}</span>
               </div>
               {monthEntries.length === 0 && (
                 <div className="bc-ledger-empty">Nenhum lançamento em {MONTH_NAMES[cursor.m].toLowerCase()}. Que tal registrar o primeiro?</div>
