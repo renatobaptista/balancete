@@ -45,7 +45,8 @@ function fmtCompact(n, currency = "BRL") {
   return v.toLocaleString(currency === "USD" ? "en-US" : "pt-BR", { style: "currency", currency, maximumFractionDigits: 0 });
 }
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 function uid() {
   return crypto.randomUUID();
@@ -650,7 +651,9 @@ export default function App({ session }) {
   function getAccountBalance(name) {
     const acc = accounts.find((a) => a.name === name);
     const initial = acc?.initialBalance || 0;
+    const today = todayISO();
     const movement = entries.reduce((s, e) => {
+      if (e.date > today) return s;
       if (e.type === "transfer") {
         if (e.fromAccount === name) return s - e.amount;
         if (e.toAccount === name) return s + (e.toAmount ?? e.amount);
@@ -1290,6 +1293,38 @@ export default function App({ session }) {
     return data;
   }, [monthEntriesInCurrency, cursor]);
 
+  // Saldo ao fim de cada dia que tem lançamento no mês exibido (todas as contas na moeda do painel, ou só a conta filtrada).
+  const { dayBalances, balanceToday } = useMemo(() => {
+    const inScope = (name) => (accountFilterDashboard ? name === accountFilterDashboard : getAccountCurrency(name) === dashboardCurrency);
+    const delta = (e) => {
+      if (e.type === "transfer") {
+        let v = 0;
+        if (inScope(e.fromAccount)) v -= e.amount;
+        if (inScope(e.toAccount)) v += e.toAmount ?? e.amount;
+        return v;
+      }
+      if (!e.account || !inScope(e.account)) return 0;
+      return e.type === "income" ? e.amount : -e.amount;
+    };
+    const prefix = monthKey(cursor.y, cursor.m);
+    const today = todayISO();
+    let running = accounts.filter((a) => inScope(a.name)).reduce((s, a) => s + (a.initialBalance || 0), 0);
+    let untilToday = running;
+    const byDay = {};
+    for (const e of entries) {
+      const v = delta(e);
+      if (e.date <= today) untilToday += v;
+      if (e.date.slice(0, 7) < prefix) running += v;
+      else if (e.date.slice(0, 7) === prefix) byDay[e.date] = (byDay[e.date] || 0) + v;
+    }
+    const result = {};
+    Object.keys(byDay).sort().forEach((d) => {
+      running += byDay[d];
+      result[d] = Math.round(running * 100) / 100;
+    });
+    return { dayBalances: result, balanceToday: Math.round(untilToday * 100) / 100 };
+  }, [entries, accounts, cursor, accountFilterDashboard, dashboardCurrency]);
+
   const donutColors = ["#A6432C", "#93701D", "#5F6F4F", "#7C5A3B", "#8A4A5C", "#4F6F6A", "#B08040"];
 
   function changeMonth(delta) {
@@ -1610,6 +1645,13 @@ export default function App({ session }) {
           font-size: 11.5px; color: var(--ink-soft); padding: 0 16px 10px; font-family: 'IBM Plex Mono', monospace;
         }
         .bc-ledger-account-balance strong { color: var(--ink); font-weight: 500; }
+        .bc-ledger-until-today { opacity: 0.8; }
+        .bc-ledger-dayhead {
+          display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 7px 16px;
+          background: var(--paper); border-top: 1px solid var(--rule); font-size: 11.5px; color: var(--ink-soft);
+          font-family: 'IBM Plex Mono', monospace; text-transform: capitalize;
+        }
+        .bc-ledger-daybalance { text-transform: none; font-weight: 500; white-space: nowrap; }
         .bc-ledger-row {
           display: flex; align-items: center; gap: 10px; padding: 9px 16px;
           border-top: 1px dashed var(--rule); font-size: 13.5px;
@@ -2143,21 +2185,35 @@ export default function App({ session }) {
                   </select>
                 )}
               </div>
-              {accountFilterDashboard && (
-                <div className="bc-ledger-account-balance">
-                  Saldo atual em {accountFilterDashboard}: <strong>{fmt(getAccountBalance(accountFilterDashboard), getAccountCurrency(accountFilterDashboard))}</strong>
-                </div>
-              )}
+              <div className="bc-ledger-account-balance">
+                {accountFilterDashboard
+                  ? <>Saldo atual em {accountFilterDashboard}: <strong>{fmt(getAccountBalance(accountFilterDashboard), getAccountCurrency(accountFilterDashboard))}</strong></>
+                  : <>Saldo atual (todas as contas): <strong>{fmt(balanceToday, dashboardCurrency)}</strong></>}
+                <span className="bc-ledger-until-today"> · até hoje</span>
+              </div>
               {monthEntries.length === 0 && (
                 <div className="bc-ledger-empty">Nenhum lançamento em {MONTH_NAMES[cursor.m].toLowerCase()}. Que tal registrar o primeiro?</div>
               )}
-              {monthEntries.map((e) => {
+              {monthEntries.map((e, idx) => {
                 const day = e.date.slice(8, 10);
                 const month = e.date.slice(5, 7);
+                const isFirstOfDay = idx === 0 || monthEntries[idx - 1].date !== e.date;
+                const dayHead = isFirstOfDay ? (
+                  <div className="bc-ledger-dayhead">
+                    <span>{day}/{month} · {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR", { weekday: "long" })}</span>
+                    {dayBalances[e.date] !== undefined && (
+                      <span className="bc-ledger-daybalance" style={{ color: dayBalances[e.date] < 0 ? "var(--expense)" : "var(--ink)" }}>
+                        Saldo no dia: {fmt(dayBalances[e.date], dashboardCurrency)}
+                      </span>
+                    )}
+                  </div>
+                ) : null;
                 if (e.type === "transfer") {
                   const crossCurrency = e.toCurrency && e.fromCurrency && e.toCurrency !== e.fromCurrency;
                   return (
-                    <div className="bc-ledger-row" key={e.id}>
+                    <Fragment key={e.id}>
+                    {dayHead}
+                    <div className="bc-ledger-row">
                       <div className="bc-ledger-date">{day}/{month}</div>
                       <div className="bc-ledger-desc">
                         <div className="bc-ledger-desc-main">{e.description || "Transferência"}</div>
@@ -2179,6 +2235,7 @@ export default function App({ session }) {
                         <Trash2 size={14} />
                       </button>
                     </div>
+                    </Fragment>
                   );
                 }
                 const meta = TYPE_META[e.type];
@@ -2187,7 +2244,9 @@ export default function App({ session }) {
                   ? `${baseDesc} ${String(e.installmentNumber).padStart(2, "0")}/${e.installmentCount}`
                   : baseDesc;
                 return (
-                  <div className="bc-ledger-row" key={e.id}>
+                  <Fragment key={e.id}>
+                  {dayHead}
+                  <div className="bc-ledger-row">
                     <div className="bc-ledger-date">{day}/{month}</div>
                     <div className="bc-ledger-desc">
                       <div className="bc-ledger-desc-main">{displayDesc}</div>
@@ -2215,6 +2274,7 @@ export default function App({ session }) {
                       <Trash2 size={14} />
                     </button>
                   </div>
+                  </Fragment>
                 );
               })}
             </div>
