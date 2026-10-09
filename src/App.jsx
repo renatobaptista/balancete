@@ -172,6 +172,8 @@ export default function App({ session }) {
   const [editing, setEditing] = useState(null);
 
   const [accountManagerOpen, setAccountManagerOpen] = useState(false);
+  // Conta que o app abre ao entrar; guardada no perfil do usuário (sincroniza entre dispositivos).
+  const [defaultAccount, setDefaultAccount] = useState(session.user.user_metadata?.default_account || "");
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
   const [backupOpen, setBackupOpen] = useState(false);
   const [restoreError, setRestoreError] = useState("");
@@ -217,6 +219,10 @@ export default function App({ session }) {
         setGoals(data.goals);
         setImportRules(data.importRules);
         setImportDescriptionRules(data.importDescriptionRules);
+        const preferred = session.user.user_metadata?.default_account;
+        if (preferred && data.accounts.some((a) => a.name === preferred && a.active !== false)) {
+          setAccountFilterDashboard(preferred);
+        }
       } catch (e) {
         setSaveError(true);
       } finally {
@@ -575,11 +581,19 @@ export default function App({ session }) {
     updateAccount(account.id, { name: clean }).catch(() => setSaveError(true));
     setEntries((prev) => prev.map((e) => (e.account === oldName ? { ...e, account: clean } : e)));
     renameAccountInEntries(userId, oldName, clean).catch(() => setSaveError(true));
+    if (defaultAccount === oldName) saveDefaultAccount(clean);
   }
   function deleteAccount(name) {
     const account = accounts.find((a) => a.name === name);
     setAccounts((prev) => prev.filter((a) => a.name !== name));
     if (account) dbDeleteAccount(account.id).catch(() => setSaveError(true));
+    if (defaultAccount === name) saveDefaultAccount("");
+  }
+  function saveDefaultAccount(name) {
+    setDefaultAccount(name);
+    supabase.auth.updateUser({ data: { default_account: name } }).then(({ error }) => {
+      if (error) setSaveError(true);
+    }).catch(() => setSaveError(true));
   }
   function patchAccountByName(name, localPatch, dbPatch) {
     const account = accounts.find((a) => a.name === name);
@@ -1780,6 +1794,12 @@ export default function App({ session }) {
           background: var(--paper); font-size: 12.5px; font-family: 'IBM Plex Mono', monospace;
         }
         .bc-account-current-balance { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500; }
+        .bc-default-account-row { margin-bottom: 14px; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 10px; background: var(--paper); }
+        .bc-default-account-row label { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink); }
+        .bc-default-account-row select {
+          padding: 6px 8px; border-radius: 7px; border: 1px solid var(--rule-strong);
+          background: var(--paper-card); font-size: 12.5px; color: var(--ink); max-width: 100%;
+        }
 
         .bc-report-controls { display: flex; gap: 14px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
         .bc-report-controls label { font-size: 12px; color: var(--ink-soft); margin-right: 6px; }
@@ -2620,6 +2640,20 @@ export default function App({ session }) {
 
             {accounts.length === 0 && (
               <p className="bc-import-help">Nenhuma conta cadastrada ainda.</p>
+            )}
+
+            {accounts.length > 0 && (
+              <div className="bc-default-account-row">
+                <label>
+                  Conta ao abrir o app
+                  <select value={defaultAccount} onChange={(e) => saveDefaultAccount(e.target.value)}>
+                    <option value="">Todas as contas</option>
+                    {[...accounts].filter((a) => a.active !== false).sort((a, b) => a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" })).map((a) => (
+                      <option key={a.name} value={a.name}>{a.name}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
             )}
 
             {[...accounts].sort((a, b) => a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" })).map((acc) => (
