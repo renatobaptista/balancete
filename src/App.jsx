@@ -3,7 +3,7 @@ import {
   Plus, Trash2, ChevronLeft, ChevronRight, Wallet, TrendingUp,
   TrendingDown, PiggyBank, Target, X, Check, Settings, Pencil, Upload,
   Landmark, CreditCard, ArrowRightLeft, RotateCcw, AlertTriangle,
-  Download, HardDrive, LogOut
+  Download, HardDrive, LogOut, User
 } from "lucide-react";
 import {
   PieChart, Pie, Cell, Tooltip as ReTooltip, ResponsiveContainer,
@@ -22,6 +22,9 @@ import {
   upsertRule, deleteRule, bulkUpsertRules, deleteAllRules,
 } from "./lib/db";
 import { supabase } from "./lib/supabaseClient";
+import {
+  SEX_OPTIONS, profileFromMetadata, profileToMetadata, validatePasswordChange, validateEmailChange,
+} from "./lib/profile";
 
 const TYPE_META = {
   income: { label: "Entrada", color: "var(--income)", soft: "var(--income-soft)", icon: TrendingUp },
@@ -175,6 +178,14 @@ export default function App({ session }) {
   // Conta que o app abre ao entrar; guardada no perfil do usuário (sincroniza entre dispositivos).
   const [defaultAccount, setDefaultAccount] = useState(session.user.user_metadata?.default_account || "");
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [accountPanelOpen, setAccountPanelOpen] = useState(false);
+  const [profile, setProfile] = useState(() => profileFromMetadata(session.user.user_metadata));
+  const [profileMsg, setProfileMsg] = useState(null);
+  const [newEmail, setNewEmail] = useState("");
+  const [emailMsg, setEmailMsg] = useState(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
+  const [passwordMsg, setPasswordMsg] = useState(null);
   const [backupOpen, setBackupOpen] = useState(false);
   const [restoreError, setRestoreError] = useState("");
   const [restoreSuccess, setRestoreSuccess] = useState("");
@@ -588,6 +599,39 @@ export default function App({ session }) {
     setAccounts((prev) => prev.filter((a) => a.name !== name));
     if (account) dbDeleteAccount(account.id).catch(() => setSaveError(true));
     if (defaultAccount === name) saveDefaultAccount("");
+  }
+  function openAccountPanel() {
+    setProfile(profileFromMetadata(session.user.user_metadata));
+    setProfileMsg(null); setEmailMsg(null); setPasswordMsg(null);
+    setNewEmail(""); setNewPassword(""); setNewPasswordConfirm("");
+    setAccountPanelOpen(true);
+  }
+  async function saveProfile() {
+    setProfileMsg(null);
+    const { error } = await supabase.auth.updateUser({ data: profileToMetadata(profile) });
+    setProfileMsg(error
+      ? { type: "error", text: "Não foi possível salvar. Tente de novo." }
+      : { type: "ok", text: "Informações salvas." });
+  }
+  async function changeEmail() {
+    const problem = validateEmailChange(newEmail, session.user.email);
+    if (problem) { setEmailMsg({ type: "error", text: problem }); return; }
+    setEmailMsg(null);
+    const { data, error } = await supabase.auth.updateUser({ email: newEmail.trim() });
+    if (error) { setEmailMsg({ type: "error", text: "Não foi possível alterar o e-mail: " + error.message }); return; }
+    setNewEmail("");
+    setEmailMsg(data?.user?.new_email
+      ? { type: "ok", text: "Enviamos um link de confirmação para " + data.user.new_email + ". O e-mail só muda depois de clicar nele." }
+      : { type: "ok", text: "E-mail alterado. Use o novo e-mail no próximo login." });
+  }
+  async function changePassword() {
+    const problem = validatePasswordChange(newPassword, newPasswordConfirm);
+    if (problem) { setPasswordMsg({ type: "error", text: problem }); return; }
+    setPasswordMsg(null);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) { setPasswordMsg({ type: "error", text: "Não foi possível alterar a senha: " + error.message }); return; }
+    setNewPassword(""); setNewPasswordConfirm("");
+    setPasswordMsg({ type: "ok", text: "Senha alterada." });
   }
   function saveDefaultAccount(name) {
     setDefaultAccount(name);
@@ -1794,6 +1838,20 @@ export default function App({ session }) {
           background: var(--paper); font-size: 12.5px; font-family: 'IBM Plex Mono', monospace;
         }
         .bc-account-current-balance { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500; }
+        .bc-acct-section { border-top: 1px solid var(--rule); padding: 14px 0 6px; margin-top: 8px; }
+        .bc-acct-section h3 { font-family: 'Fraunces', serif; font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+        .bc-acct-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+        .bc-acct-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; color: var(--ink-soft); }
+        .bc-acct-grid input, .bc-acct-grid select {
+          padding: 7px 9px; border-radius: 7px; border: 1px solid var(--rule-strong);
+          background: var(--paper); font-size: 13px; color: var(--ink); min-width: 0;
+        }
+        .bc-acct-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 10px 0 8px; }
+        .bc-acct-msg { font-size: 12px; line-height: 1.4; }
+        .bc-acct-msg.ok { color: var(--income); }
+        .bc-acct-msg.error { color: var(--expense); }
+        .bc-acct-danger { background: var(--expense-soft); border-radius: 10px; padding: 12px 14px; margin-top: 14px; border-top: none; }
+        @media (max-width: 520px) { .bc-acct-grid { grid-template-columns: 1fr; } }
         .bc-default-account-row { margin-bottom: 14px; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 10px; background: var(--paper); }
         .bc-default-account-row label { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink); }
         .bc-default-account-row select {
@@ -1906,8 +1964,8 @@ export default function App({ session }) {
           <button className="bc-icon-btn" aria-label="Backup e armazenamento" title="Backup e armazenamento" onClick={() => { setRestoreError(""); setRestoreSuccess(""); setBackupOpen(true); }}>
             <HardDrive size={16} />
           </button>
-          <button className="bc-icon-btn bc-icon-btn-danger" aria-label="Apagar dados" title="Apagar dados" onClick={() => setResetConfirmOpen(true)}>
-            <RotateCcw size={16} />
+          <button className="bc-icon-btn" aria-label="Minha conta" title="Minha conta" onClick={openAccountPanel}>
+            <User size={16} />
           </button>
           <button className="bc-icon-btn" aria-label="Sair" title={`Sair (${session.user.email})`} onClick={() => supabase.auth.signOut()}>
             <LogOut size={16} />
@@ -2814,6 +2872,89 @@ export default function App({ session }) {
               </label>
               {restoreError && <div className="bc-save-warning">{restoreError}</div>}
               {restoreSuccess && <p className="bc-import-help" style={{ color: "var(--income)" }}>{restoreSuccess}</p>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {accountPanelOpen && (
+        <div className="bc-modal-overlay" onClick={() => setAccountPanelOpen(false)}>
+          <div className="bc-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="bc-modal-head">
+              <span className="bc-modal-title">Minha conta</span>
+              <button className="bc-modal-close" onClick={() => setAccountPanelOpen(false)} aria-label="Fechar"><X size={18} /></button>
+            </div>
+
+            <div className="bc-acct-section">
+              <h3>Informações pessoais</h3>
+              <div className="bc-acct-grid">
+                <label>Nome
+                  <input type="text" value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} />
+                </label>
+                <label>Telefone
+                  <input type="tel" inputMode="tel" value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} />
+                </label>
+                <label>Data de nascimento
+                  <input type="date" value={profile.birthDate} onChange={(e) => setProfile({ ...profile, birthDate: e.target.value })} />
+                </label>
+                <label>Sexo
+                  <select value={profile.sex} onChange={(e) => setProfile({ ...profile, sex: e.target.value })}>
+                    <option value="">Selecione</option>
+                    {SEX_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </label>
+                <label>País
+                  <input type="text" value={profile.country} onChange={(e) => setProfile({ ...profile, country: e.target.value })} />
+                </label>
+                <label>Estado
+                  <input type="text" value={profile.state} onChange={(e) => setProfile({ ...profile, state: e.target.value })} />
+                </label>
+                <label>Cidade
+                  <input type="text" value={profile.city} onChange={(e) => setProfile({ ...profile, city: e.target.value })} />
+                </label>
+              </div>
+              <div className="bc-acct-actions">
+                <button className="bc-btn-primary" onClick={saveProfile}><Check size={14} /> Salvar</button>
+                {profileMsg && <span className={`bc-acct-msg ${profileMsg.type}`}>{profileMsg.text}</span>}
+              </div>
+            </div>
+
+            <div className="bc-acct-section">
+              <h3>E-mail</h3>
+              <p className="bc-import-help">E-mail atual: <strong>{session.user.email}</strong></p>
+              <div className="bc-acct-grid">
+                <label>Novo e-mail
+                  <input type="email" autoComplete="off" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
+                </label>
+              </div>
+              <div className="bc-acct-actions">
+                <button className="bc-btn-ghost" onClick={changeEmail}>Alterar e-mail</button>
+                {emailMsg && <span className={`bc-acct-msg ${emailMsg.type}`}>{emailMsg.text}</span>}
+              </div>
+            </div>
+
+            <div className="bc-acct-section">
+              <h3>Senha</h3>
+              <div className="bc-acct-grid">
+                <label>Nova senha
+                  <input type="password" autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+                </label>
+                <label>Repetir nova senha
+                  <input type="password" autoComplete="new-password" value={newPasswordConfirm} onChange={(e) => setNewPasswordConfirm(e.target.value)} />
+                </label>
+              </div>
+              <div className="bc-acct-actions">
+                <button className="bc-btn-ghost" onClick={changePassword}>Alterar senha</button>
+                {passwordMsg && <span className={`bc-acct-msg ${passwordMsg.type}`}>{passwordMsg.text}</span>}
+              </div>
+            </div>
+
+            <div className="bc-acct-section bc-acct-danger">
+              <h3>Zona de perigo</h3>
+              <p className="bc-import-help">Apagar lançamentos ou todos os seus dados. Você ainda verá uma tela de confirmação antes de apagar.</p>
+              <button className="bc-btn-danger" onClick={() => { setAccountPanelOpen(false); setResetConfirmOpen(true); }}>
+                <RotateCcw size={14} /> Apagar dados
+              </button>
             </div>
           </div>
         </div>
