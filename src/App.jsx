@@ -1108,7 +1108,11 @@ export default function App({ session }) {
       const descOverride = importDescriptionOverrides[normalizeHeader(description)];
       if (descOverride && descOverride.ignore) { ignored += 1; return; }
 
-      const type = descOverride ? descOverride.type : mapping.type;
+      let type = descOverride ? descOverride.type : mapping.type;
+      // O sinal de cada linha manda: valor positivo é entrada e negativo é saída/investimento,
+      // mesmo que a categoria seja majoritariamente do outro tipo (estornos, resgates, empréstimos).
+      if (parsedValue > 0 && (type === "expense" || type === "invest")) type = "income";
+      else if (parsedValue < 0 && type === "income") type = "expense";
       const catName = (descOverride ? descOverride.category : mapping.category).trim() || "Outros";
       const subName = ((descOverride ? descOverride.subcategory : mapping.subcategory) || "").trim();
       const amount = Math.abs(parsedValue);
