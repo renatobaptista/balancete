@@ -16,14 +16,26 @@ async function ensureDefaultCategories(userId) {
   if (error) throw error;
 }
 
+// A API do Supabase devolve no máximo 1000 linhas por consulta; lê todas as páginas.
+async function fetchPaged(buildQuery) {
+  const PAGE = 1000;
+  const rows = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await buildQuery().range(from, from + PAGE - 1);
+    if (error) return { data: null, error };
+    rows.push(...data);
+    if (data.length < PAGE) return { data: rows, error: null };
+  }
+}
+
 export async function fetchAll(userId) {
   const [entriesRes, accountsRes, categoriesRes, goalsRes, rulesRes, descRulesRes] = await Promise.all([
-    supabase.from("entries").select("*").order("date", { ascending: false }),
+    fetchPaged(() => supabase.from("entries").select("*").order("date", { ascending: false }).order("id")),
     supabase.from("accounts").select("*").order("created_at", { ascending: true }),
     supabase.from("categories").select("*"),
     supabase.from("goals").select("*").maybeSingle(),
-    supabase.from("import_rules").select("*"),
-    supabase.from("import_description_rules").select("*"),
+    fetchPaged(() => supabase.from("import_rules").select("*").order("raw_key")),
+    fetchPaged(() => supabase.from("import_description_rules").select("*").order("raw_key")),
   ]);
 
   for (const res of [entriesRes, accountsRes, categoriesRes, goalsRes, rulesRes, descRulesRes]) {
