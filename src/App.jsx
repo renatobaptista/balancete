@@ -14,7 +14,7 @@ import { DEFAULT_CATEGORIES } from "./lib/defaultCategories";
 import {
   fetchAll,
   insertEntry, insertEntriesBulk, updateEntry, deleteEntry as dbDeleteEntry, deleteEntriesForInstallmentCancel,
-  deleteAllEntries,
+  deleteAllEntries, updateEntriesCategory,
   insertCategory, deleteCategoryRow, renameCategoryRow, updateCategorySubcategories, renameCategoryInEntries,
   deleteAllCategories, insertCategoriesBulk,
   upsertGoals,
@@ -25,6 +25,7 @@ import { supabase } from "./lib/supabaseClient";
 import {
   SEX_OPTIONS, profileFromMetadata, profileToMetadata, validatePasswordChange, validateEmailChange,
 } from "./lib/profile";
+import { planReorg } from "./lib/categoryReorg";
 
 const TYPE_META = {
   income: { label: "Entrada", color: "var(--income)", soft: "var(--income-soft)", icon: TrendingUp },
@@ -186,6 +187,8 @@ export default function App({ session }) {
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
   const [passwordMsg, setPasswordMsg] = useState(null);
+  const [reorgPlan, setReorgPlan] = useState(null); // null = janela fechada
+  const [reorgStatus, setReorgStatus] = useState({ phase: "idle", done: 0, error: "" });
   const [backupOpen, setBackupOpen] = useState(false);
   const [restoreError, setRestoreError] = useState("");
   const [restoreSuccess, setRestoreSuccess] = useState("");
@@ -599,6 +602,39 @@ export default function App({ session }) {
     setAccounts((prev) => prev.filter((a) => a.name !== name));
     if (account) dbDeleteAccount(account.id).catch(() => setSaveError(true));
     if (defaultAccount === name) saveDefaultAccount("");
+  }
+  function openReorg() {
+    setReorgStatus({ phase: "idle", done: 0, error: "" });
+    setReorgPlan(planReorg(entries));
+    setAccountPanelOpen(false);
+  }
+  async function applyReorg() {
+    const { changes } = reorgPlan;
+    const byTarget = new Map();
+    for (const c of changes) {
+      const key = c.category + "\u0000" + c.subcategory;
+      if (!byTarget.has(key)) byTarget.set(key, { category: c.category, subcategory: c.subcategory, ids: [] });
+      byTarget.get(key).ids.push(c.id);
+    }
+    setReorgStatus({ phase: "running", done: 0, error: "" });
+    let done = 0;
+    try {
+      for (const t of byTarget.values()) {
+        await updateEntriesCategory(t.ids, t.category, t.subcategory);
+        done += t.ids.length;
+        setReorgStatus({ phase: "running", done, error: "" });
+      }
+      const byId = new Map(changes.map((c) => [c.id, c]));
+      setEntries((prev) => prev.map((e) => {
+        const c = byId.get(e.id);
+        return c ? { ...e, category: c.category, subcategory: c.subcategory } : e;
+      }));
+      setReorgStatus({ phase: "done", done, error: "" });
+    } catch (e) {
+      // o que já foi gravado continua valendo; recarrega para a tela refletir o banco
+      try { const data = await fetchAll(userId); setEntries(data.entries); } catch (_) { /* ignora */ }
+      setReorgStatus({ phase: "error", done, error: "Parou no meio. O que já foi alterado continua valendo; você pode aplicar de novo." });
+    }
   }
   function openAccountPanel() {
     setProfile(profileFromMetadata(session.user.user_metadata));
@@ -1850,6 +1886,12 @@ export default function App({ session }) {
         .bc-acct-msg { font-size: 12px; line-height: 1.4; }
         .bc-acct-msg.ok { color: var(--income); }
         .bc-acct-msg.error { color: var(--expense); }
+        .bc-btn-primary:disabled, .bc-btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
+        .bc-reorg-list { max-height: 320px; overflow-y: auto; border: 1px solid var(--rule); border-radius: 10px; margin-bottom: 14px; }
+        .bc-reorg-row { display: grid; grid-template-columns: 70px 1fr auto; gap: 10px; align-items: center; padding: 7px 10px; font-size: 12.5px; border-bottom: 1px solid var(--rule); }
+        .bc-reorg-row:last-child { border-bottom: none; }
+        .bc-reorg-type { color: var(--ink-soft); font-size: 11px; }
+        .bc-reorg-count { font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
         .bc-acct-danger { background: var(--expense-soft); border-radius: 10px; padding: 12px 14px; margin-top: 14px; border-top: none; }
         @media (max-width: 520px) { .bc-acct-grid { grid-template-columns: 1fr; } }
 
@@ -2944,12 +2986,75 @@ export default function App({ session }) {
               <p className="bc-import-help" style={{ marginTop: 8 }}>Salva automaticamente ao escolher. Vale no computador e no celular.</p>
             </div>
 
+            <div className="bc-acct-section">
+              <h3>Ferramentas</h3>
+              <p className="bc-import-help">
+                Reorganiza o histórico importado: o que era subcategoria no site antigo (ex.: "Pedágio") volta para
+                Categoria → Subcategoria (ex.: Transporte → Pedágio). Você vê um resumo antes de confirmar.
+              </p>
+              <button className="bc-btn-ghost" onClick={openReorg}>Reorganizar categorias do histórico</button>
+            </div>
+
             <div className="bc-acct-section bc-acct-danger">
               <h3>Zona de perigo</h3>
               <p className="bc-import-help">Apagar lançamentos ou todos os seus dados. Você ainda verá uma tela de confirmação antes de apagar.</p>
               <button className="bc-btn-danger" onClick={() => { setAccountPanelOpen(false); setResetConfirmOpen(true); }}>
                 <RotateCcw size={14} /> Apagar dados
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reorgPlan && (
+        <div className="bc-modal-overlay" onClick={() => reorgStatus.phase !== "running" && setReorgPlan(null)}>
+          <div className="bc-modal" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
+            <div className="bc-modal-head">
+              <span className="bc-modal-title">Reorganizar categorias</span>
+              <button className="bc-modal-close" disabled={reorgStatus.phase === "running"} onClick={() => setReorgPlan(null)} aria-label="Fechar"><X size={18} /></button>
+            </div>
+
+            {reorgPlan.changes.length === 0 ? (
+              <p className="bc-import-help">Nada para reorganizar: seus lançamentos já estão organizados.</p>
+            ) : (
+              <>
+                <p className="bc-import-help">
+                  <strong>{reorgPlan.changes.length.toLocaleString("pt-BR")}</strong> lançamentos serão alterados.
+                  Valores, datas, contas e saldos não mudam; só a categoria e a subcategoria.
+                  Recomendo baixar um backup antes.
+                </p>
+                <div className="bc-reorg-list">
+                  {[...reorgPlan.groups].sort((a, b) => b.count - a.count).map((g, i) => (
+                    <div className="bc-reorg-row" key={i}>
+                      <span className="bc-reorg-type">{TYPE_META[g.type]?.label || g.type}</span>
+                      <span className="bc-reorg-map">{g.from} → <strong>{g.category}</strong> › {g.subcategory || "(sem subcategoria)"}</span>
+                      <span className="bc-reorg-count">{g.count.toLocaleString("pt-BR")}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {reorgStatus.phase === "running" && (
+              <p className="bc-import-help">Aplicando… {reorgStatus.done.toLocaleString("pt-BR")} de {reorgPlan.changes.length.toLocaleString("pt-BR")}. Não feche esta janela.</p>
+            )}
+            {reorgStatus.phase === "done" && (
+              <p className="bc-acct-msg ok">Pronto! {reorgStatus.done.toLocaleString("pt-BR")} lançamentos reorganizados.</p>
+            )}
+            {reorgStatus.phase === "error" && <p className="bc-acct-msg error">{reorgStatus.error}</p>}
+
+            <div className="bc-form-actions" style={{ justifyContent: "flex-end", flexWrap: "wrap" }}>
+              {reorgPlan.changes.length > 0 && reorgStatus.phase !== "done" && (
+                <button className="bc-btn-ghost" disabled={reorgStatus.phase === "running"} onClick={exportBackup}><Download size={14} /> Baixar backup antes</button>
+              )}
+              <button className="bc-btn-ghost" disabled={reorgStatus.phase === "running"} onClick={() => setReorgPlan(null)}>
+                {reorgStatus.phase === "done" ? "Fechar" : "Cancelar"}
+              </button>
+              {reorgPlan.changes.length > 0 && reorgStatus.phase !== "done" && (
+                <button className="bc-btn-primary" disabled={reorgStatus.phase === "running"} onClick={applyReorg}>
+                  <Check size={14} /> Aplicar
+                </button>
+              )}
             </div>
           </div>
         </div>

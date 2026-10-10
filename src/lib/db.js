@@ -101,6 +101,18 @@ export async function deleteAllEntries(userId) {
   if (error) throw error;
 }
 
+// Atualiza categoria/subcategoria de vários lançamentos (por id, em lotes para não estourar a URL).
+export async function updateEntriesCategory(ids, category, subcategory) {
+  const CHUNK = 100;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const { error } = await supabase
+      .from("entries")
+      .update({ category, subcategory })
+      .in("id", ids.slice(i, i + CHUNK));
+    if (error) throw error;
+  }
+}
+
 export async function renameCategoryInEntries(userId, type, oldName, newName) {
   const { error } = await supabase
     .from("entries")
