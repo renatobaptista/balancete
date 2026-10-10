@@ -14,7 +14,7 @@ import { DEFAULT_CATEGORIES } from "./lib/defaultCategories";
 import {
   fetchAll,
   insertEntry, insertEntriesBulk, updateEntry, deleteEntry as dbDeleteEntry, deleteEntriesForInstallmentCancel,
-  deleteAllEntries,
+  deleteAllEntries, updateEntriesDate,
   insertCategory, deleteCategoryRow, renameCategoryRow, updateCategorySubcategories, renameCategoryInEntries,
   deleteAllCategories, insertCategoriesBulk,
   upsertGoals,
@@ -25,6 +25,7 @@ import { supabase } from "./lib/supabaseClient";
 import {
   SEX_OPTIONS, profileFromMetadata, profileToMetadata, validatePasswordChange, validateEmailChange,
 } from "./lib/profile";
+import { installmentInfo, findSeries, planAnticipation } from "./lib/installments";
 
 const TYPE_META = {
   income: { label: "Entrada", color: "var(--income)", soft: "var(--income-soft)", icon: TrendingUp },
@@ -186,6 +187,7 @@ export default function App({ session }) {
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
   const [passwordMsg, setPasswordMsg] = useState(null);
+  const [anticipation, setAnticipation] = useState(null); // { name, account, series, date, busy, failed }
   const [backupOpen, setBackupOpen] = useState(false);
   const [restoreError, setRestoreError] = useState("");
   const [restoreSuccess, setRestoreSuccess] = useState("");
@@ -498,6 +500,31 @@ export default function App({ session }) {
       !(e.installmentGroupId === entry.installmentGroupId && e.date >= entry.date)
     ));
     deleteEntriesForInstallmentCancel(userId, entry.installmentGroupId, entry.date).catch(() => setSaveError(true));
+  }
+
+  function openAnticipation(entry) {
+    const info = installmentInfo(entry);
+    setAnticipation({
+      name: info ? info.base : entry.description,
+      account: entry.account,
+      series: findSeries(entry, entries),
+      date: todayISO(),
+      busy: false,
+      failed: false,
+    });
+  }
+  async function confirmAnticipation() {
+    const plan = planAnticipation(anticipation.series, anticipation.date, todayISO());
+    if (plan.error || plan.moves.length === 0) return;
+    setAnticipation({ ...anticipation, busy: true, failed: false });
+    try {
+      await updateEntriesDate(plan.moves.map((m) => m.id), anticipation.date);
+      const moved = new Set(plan.moves.map((m) => m.id));
+      setEntries((prev) => prev.map((e) => (moved.has(e.id) ? { ...e, date: anticipation.date } : e)));
+      setAnticipation(null);
+    } catch (e) {
+      setAnticipation((a) => a && { ...a, busy: false, failed: true });
+    }
   }
 
   function setLimit(category, value) {
@@ -1742,6 +1769,16 @@ export default function App({ session }) {
         }
         .bc-ledger-row:hover .bc-cancel-installments { opacity: 1; }
         .bc-cancel-installments:hover { color: var(--expense); }
+        .bc-anticipate:hover { color: var(--income); }
+        .bc-btn-primary:disabled, .bc-btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
+        @media (hover: none) { .bc-cancel-installments { opacity: 1; } }
+        .bc-antic-list { max-height: 260px; overflow-y: auto; border: 1px solid var(--rule); border-radius: 10px; margin: 10px 0 12px; }
+        .bc-antic-row { display: grid; grid-template-columns: 54px 1fr auto; gap: 10px; align-items: center; padding: 7px 10px; font-size: 12.5px; border-bottom: 1px solid var(--rule); }
+        .bc-antic-row:last-child { border-bottom: none; }
+        .bc-antic-row .num { font-family: 'IBM Plex Mono', monospace; color: var(--ink-soft); font-size: 11.5px; }
+        .bc-antic-row .amt { font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+        .bc-antic-date { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12.5px; }
+        .bc-antic-date input { padding: 6px 8px; border-radius: 7px; border: 1px solid var(--rule-strong); background: var(--paper); font-size: 13px; }
         .bc-ledger-amount {
           font-family: 'IBM Plex Mono', monospace; font-size: 13.5px; font-weight: 500; white-space: nowrap;
         }
@@ -2334,6 +2371,14 @@ export default function App({ session }) {
                           cancelar parcelas restantes
                         </button>
                       )}
+                      {(() => {
+                        const info = e.type === "expense" ? installmentInfo(e) : null;
+                        return info && info.number < info.count ? (
+                          <button className="bc-cancel-installments bc-anticipate" onClick={() => openAnticipation(e)}>
+                            antecipar parcelas
+                          </button>
+                        ) : null;
+                      })()}
                       {e.notes && <span className="bc-ledger-notes" title={e.notes}>💬 {e.notes}</span>}
                     </div>
                     <div className="bc-ledger-amount" style={{ color: meta.color }}>
@@ -2856,6 +2901,62 @@ export default function App({ session }) {
           </div>
         </div>
       )}
+
+      {anticipation && (() => {
+        const plan = planAnticipation(anticipation.series, anticipation.date, todayISO());
+        const currency = getAccountCurrency(anticipation.account);
+        const fmtDay = (iso) => iso.split("-").reverse().join("/");
+        return (
+          <div className="bc-modal-overlay" onClick={() => !anticipation.busy && setAnticipation(null)}>
+            <div className="bc-modal" style={{ maxWidth: 520 }} onClick={(ev) => ev.stopPropagation()}>
+              <div className="bc-modal-head">
+                <span className="bc-modal-title">Antecipar parcelas</span>
+                <button className="bc-modal-close" disabled={anticipation.busy} onClick={() => setAnticipation(null)} aria-label="Fechar"><X size={18} /></button>
+              </div>
+              <p className="bc-import-help">
+                <strong>{anticipation.name}</strong> · {anticipation.account}. As parcelas futuras abaixo passam para a data
+                escolhida. Só a data muda; valor, conta e categoria continuam iguais.
+              </p>
+
+              <div className="bc-antic-date">
+                <label htmlFor="antic-date">Nova data</label>
+                <input
+                  id="antic-date" type="date" value={anticipation.date}
+                  onChange={(ev) => setAnticipation({ ...anticipation, date: ev.target.value, failed: false })}
+                />
+              </div>
+
+              {plan.error && <p className="bc-acct-msg error" style={{ marginTop: 10 }}>{plan.error}</p>}
+
+              {plan.moves.length > 0 && (
+                <>
+                  <div className="bc-antic-list">
+                    {plan.moves.map((m) => (
+                      <div className="bc-antic-row" key={m.id}>
+                        <span className="num">{String(m.number).padStart(2, "0")}/{m.count}</span>
+                        <span>{fmtDay(m.from)} → <strong>{fmtDay(m.to)}</strong></span>
+                        <span className="amt">{fmt(m.amount, currency)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="bc-import-help">
+                    {plan.moves.length} {plan.moves.length === 1 ? "parcela" : "parcelas"} · total {fmt(plan.total, currency)}
+                  </p>
+                </>
+              )}
+
+              {anticipation.failed && <p className="bc-acct-msg error">Não foi possível salvar. Tente de novo.</p>}
+
+              <div className="bc-form-actions" style={{ justifyContent: "flex-end" }}>
+                <button className="bc-btn-ghost" disabled={anticipation.busy} onClick={() => setAnticipation(null)}>Cancelar</button>
+                <button className="bc-btn-primary" disabled={anticipation.busy || !!plan.error || plan.moves.length === 0} onClick={confirmAnticipation}>
+                  <Check size={14} /> {anticipation.busy ? "Antecipando…" : "Antecipar"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {accountPanelOpen && (
         <div className="bc-modal-overlay" onClick={() => setAccountPanelOpen(false)}>

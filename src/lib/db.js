@@ -101,6 +101,15 @@ export async function deleteAllEntries(userId) {
   if (error) throw error;
 }
 
+// Muda a data de vários lançamentos (por id, em lotes para não estourar a URL). Usado ao antecipar parcelas.
+export async function updateEntriesDate(ids, date) {
+  const CHUNK = 100;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const { error } = await supabase.from("entries").update({ date }).in("id", ids.slice(i, i + CHUNK));
+    if (error) throw error;
+  }
+}
+
 export async function renameCategoryInEntries(userId, type, oldName, newName) {
   const { error } = await supabase
     .from("entries")
