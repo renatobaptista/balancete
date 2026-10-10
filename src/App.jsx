@@ -26,6 +26,7 @@ import {
   SEX_OPTIONS, profileFromMetadata, profileToMetadata, validatePasswordChange, validateEmailChange,
 } from "./lib/profile";
 import { installmentInfo, findSeries, futureInstallments, planAnticipation } from "./lib/installments";
+import { conversionSummary, feeDescription } from "./lib/conversion";
 
 const TYPE_META = {
   income: { label: "Entrada", color: "var(--income)", soft: "var(--income-soft)", icon: TrendingUp },
@@ -152,6 +153,8 @@ export default function App({ session }) {
   const [fAccount, setFAccount] = useState("");
   const [fToAccount, setFToAccount] = useState("");
   const [fToAmount, setFToAmount] = useState("");
+  const [fCommercialRate, setFCommercialRate] = useState(""); // cotação comercial (R$ por US$), opcional
+  const [fFees, setFFees] = useState(""); // taxas da conversão, opcional (só ao criar)
   const [accountFilterDashboard, setAccountFilterDashboard] = useState("");
   const [fDesc, setFDesc] = useState("");
   const [fNotes, setFNotes] = useState("");
@@ -261,6 +264,8 @@ export default function App({ session }) {
   function resetFormFields() {
     setFAmount("");
     setFToAmount("");
+    setFCommercialRate("");
+    setFFees("");
     setFDesc("");
     setFNotes("");
     setFDate(todayISO());
@@ -301,6 +306,8 @@ export default function App({ session }) {
       setFAccount(entry.fromAccount);
       setFToAccount(entry.toAccount);
       setFToAmount(entry.toAmount != null ? String(entry.toAmount) : String(entry.amount));
+      setFCommercialRate(entry.exchangeRate ? String(entry.exchangeRate).replace(".", ",") : "");
+      setFFees("");
     } else {
       setFType(entry.type);
       setFCategory(entry.category);
@@ -335,6 +342,19 @@ export default function App({ session }) {
     upsertRule("import_description_rules", userId, key, data).catch(() => setSaveError(true));
   }
 
+  const FEE_CATEGORY = "Câmbio";
+  const FEE_SUBCATEGORY = "Taxas";
+  // Garante a categoria de despesa "Câmbio" › "Taxas" usada pelas taxas de conversão.
+  function ensureFeeCategory() {
+    const exists = categories.expense && categories.expense[FEE_CATEGORY] !== undefined;
+    const subs = exists ? categories.expense[FEE_CATEGORY] : [];
+    if (exists && subs.includes(FEE_SUBCATEGORY)) return;
+    const nextSubs = [...subs, FEE_SUBCATEGORY];
+    setCategories((prev) => ({ ...prev, expense: { ...prev.expense, [FEE_CATEGORY]: nextSubs } }));
+    const write = exists ? Promise.resolve() : insertCategory(userId, "expense", FEE_CATEGORY);
+    write.then(() => updateCategorySubcategories(userId, "expense", FEE_CATEGORY, nextSubs)).catch(() => setSaveError(true));
+  }
+
   function saveEntry() {
     const amountNum = parseFloat(String(fAmount).replace(",", "."));
     if (!amountNum || amountNum <= 0) { setFormError("Informe um valor válido."); return; }
@@ -352,11 +372,20 @@ export default function App({ session }) {
         toAmountNum = parseFloat(String(fToAmount).replace(",", "."));
         if (!toAmountNum || toAmountNum <= 0) { setFormError("Informe o valor recebido na conta de destino."); return; }
       }
+      const rateText = String(fCommercialRate).trim();
+      const feesText = String(fFees).trim();
+      const rateNum = rateText ? parseFloat(rateText.replace(",", ".")) : null;
+      const feesNum = feesText ? parseFloat(feesText.replace(",", ".")) : 0;
+      if (crossCurrency && rateText && !(rateNum > 0)) { setFormError("Cotação comercial inválida."); return; }
+      if (crossCurrency && feesText && !(feesNum > 0)) { setFormError("Valor das taxas inválido."); return; }
       setFormError("");
       if (editingEntryId) {
+        const original = entries.find((e) => e.id === editingEntryId);
+        // exchangeRate undefined = coluna ainda não usada; só manda null para limpar uma cotação que já existia
+        const exchangeRate = crossCurrency && rateNum ? rateNum : original.exchangeRate !== undefined ? null : undefined;
         const nextEntry = {
-          ...entries.find((e) => e.id === editingEntryId),
-          type: "transfer", amount: amountNum, toAmount: toAmountNum, fromCurrency, toCurrency,
+          ...original,
+          type: "transfer", amount: amountNum, toAmount: toAmountNum, fromCurrency, toCurrency, exchangeRate,
           fromAccount: fAccount, toAccount: fToAccount, description: fDesc.trim(), notes: fNotes.trim(), date: fDate,
         };
         setEntries((prev) => prev.map((e) => (e.id === editingEntryId ? nextEntry : e)));
@@ -376,9 +405,26 @@ export default function App({ session }) {
         description: fDesc.trim(),
         notes: fNotes.trim(),
         date: fDate,
+        ...(crossCurrency && rateNum ? { exchangeRate: rateNum } : {}),
       };
-      setEntries((prev) => [entry, ...prev]);
-      insertEntry(entry, userId).catch(() => setSaveError(true));
+      const toInsert = [entry];
+      if (crossCurrency && feesNum > 0) {
+        ensureFeeCategory();
+        toInsert.push({
+          id: uid(),
+          type: "expense",
+          amount: feesNum,
+          category: FEE_CATEGORY,
+          subcategory: FEE_SUBCATEGORY,
+          account: fAccount,
+          currency: fromCurrency,
+          description: feeDescription(fromCurrency),
+          notes: "",
+          date: fDate,
+        });
+      }
+      setEntries((prev) => [...toInsert, ...prev]);
+      insertEntriesBulk(toInsert, userId).catch(() => setSaveError(true));
       resetFormFields();
       return;
     }
@@ -1776,6 +1822,8 @@ export default function App({ session }) {
         .bc-ledger-row:hover .bc-cancel-installments { opacity: 1; }
         .bc-cancel-installments:hover { color: var(--expense); }
         .bc-anticipate:hover { color: var(--income); }
+        .bc-ledger-rate { font-size: 10.5px; color: var(--ink-soft); margin-left: 6px; font-family: 'IBM Plex Mono', monospace; }
+        .bc-conversion-summary { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--ink-soft); background: var(--paper); border: 1px dashed var(--rule-strong); border-radius: 8px; padding: 8px 10px; }
         .bc-btn-primary:disabled, .bc-btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
         @media (hover: none) { .bc-cancel-installments { opacity: 1; } }
         .bc-antic-list { max-height: 260px; overflow-y: auto; border: 1px solid var(--rule); border-radius: 10px; margin: 10px 0 12px; }
@@ -2188,6 +2236,51 @@ export default function App({ session }) {
                       </span>
                     </div>
                   )}
+                  {fType === "transfer" && fAccount && fToAccount && getAccountCurrency(fAccount) !== getAccountCurrency(fToAccount) && (() => {
+                    const fromCur = getAccountCurrency(fAccount);
+                    const num = (s) => parseFloat(String(s).replace(",", "."));
+                    const summary = conversionSummary({
+                      fromCurrency: fromCur, sent: num(fAmount), received: num(fToAmount),
+                      commercialRate: num(fCommercialRate), fees: num(fFees),
+                    });
+                    return (
+                      <>
+                        <div className="bc-field">
+                          <label>Cotação comercial do dia (R$ por US$)</label>
+                          <input
+                            type="text" inputMode="decimal" placeholder="opcional, ex.: 5,50"
+                            value={fCommercialRate} onChange={(e) => setFCommercialRate(e.target.value)}
+                          />
+                        </div>
+                        {!editingEntryId && (
+                          <div className="bc-field">
+                            <label>Taxas da conversão ({fromCur === "USD" ? "US$" : "R$"})</label>
+                            <input
+                              type="text" inputMode="decimal" placeholder="opcional (IOF, tarifa…)"
+                              value={fFees} onChange={(e) => setFFees(e.target.value)}
+                            />
+                            <span className="bc-field-hint" style={{ color: "var(--ink-soft)" }}>
+                              Vira uma despesa à parte em Câmbio › Taxas, na conta de origem.
+                            </span>
+                          </div>
+                        )}
+                        {summary && (
+                          <div className="bc-field bc-conversion-summary">
+                            <span>
+                              Cotação efetiva: <strong>{fmt(summary.effectiveRate, "BRL")}</strong> por US$
+                            </span>
+                            {summary.hasCommercial && (
+                              <span>
+                                Custo da conversão: <strong>{fmt(summary.totalCost, "BRL")}</strong>
+                                {" "}(diferença para a cotação comercial {fmt(summary.spreadCost, "BRL")}
+                                {summary.fees > 0 ? ` + taxas ${fmt(summary.fees, fromCur)}` : ""})
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                   {fType === "expense" && !editingEntryId && (
                     <div className="bc-field">
                       <label>&nbsp;</label>
@@ -2326,6 +2419,9 @@ export default function App({ session }) {
                 ) : null;
                 if (e.type === "transfer") {
                   const crossCurrency = e.toCurrency && e.fromCurrency && e.toCurrency !== e.fromCurrency;
+                  const conv = crossCurrency
+                    ? conversionSummary({ fromCurrency: e.fromCurrency, sent: e.amount, received: e.toAmount, commercialRate: e.exchangeRate })
+                    : null;
                   return (
                     <Fragment key={e.id}>
                     {dayHead}
@@ -2337,6 +2433,12 @@ export default function App({ session }) {
                           <ArrowRightLeft size={10} />
                           {e.fromAccount} <ArrowRightLeft size={9} style={{ opacity: 0.5 }} /> {e.toAccount}
                         </span>
+                        {conv && (
+                          <span className="bc-ledger-rate">
+                            cotação {fmt(conv.effectiveRate, "BRL")}/US$
+                            {conv.hasCommercial ? ` · custo do câmbio ${fmt(conv.spreadCost, "BRL")}` : ""}
+                          </span>
+                        )}
                         {e.notes && <span className="bc-ledger-notes" title={e.notes}>💬 {e.notes}</span>}
                       </div>
                       <div className="bc-ledger-amount" style={{ color: "var(--transfer)" }}>

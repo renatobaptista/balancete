@@ -4,6 +4,33 @@ import {
   fromCategoryRows, toGoalsRow, fromGoalsRow, fromRuleRows,
 } from "./mappers";
 
+describe("transfer exchange rate", () => {
+  const transfer = {
+    id: "t1", type: "transfer", amount: 5000, toAmount: 880, fromCurrency: "BRL", toCurrency: "USD",
+    fromAccount: "Itau", toAccount: "Nomad USD", description: "", notes: "", date: "2026-10-10",
+  };
+
+  it("does not send exchange_rate when the entry has none (works even without the DB column)", () => {
+    expect(toEntryRow(transfer, "u1")).not.toHaveProperty("exchange_rate");
+  });
+
+  it("sends the commercial rate when informed", () => {
+    expect(toEntryRow({ ...transfer, exchangeRate: 5.5 }, "u1").exchange_rate).toBe(5.5);
+  });
+
+  it("sends null to clear a rate that was loaded from the DB", () => {
+    expect(toEntryRow({ ...transfer, exchangeRate: null }, "u1").exchange_rate).toBeNull();
+  });
+
+  it("reads the rate back, and leaves it undefined when the column does not exist", () => {
+    const row = { ...toEntryRow({ ...transfer, exchangeRate: 5.5 }, "u1") };
+    expect(fromEntryRow(row).exchangeRate).toBe(5.5);
+    delete row.exchange_rate;
+    expect(fromEntryRow(row).exchangeRate).toBeUndefined();
+    expect(fromEntryRow({ ...row, exchange_rate: null }).exchangeRate).toBeNull();
+  });
+});
+
 describe("entry mappers", () => {
   it("round-trips a simple expense entry", () => {
     const entry = {

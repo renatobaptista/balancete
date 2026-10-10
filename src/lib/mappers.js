@@ -20,6 +20,8 @@ export function toEntryRow(entry, userId) {
     installment_group_id: entry.installmentGroupId || null,
     installment_number: entry.installmentNumber || null,
     installment_count: entry.installmentCount || null,
+    // só vai no payload quando há cotação (ou para limpá-la): assim funciona mesmo sem a coluna no banco
+    ...(isTransfer && entry.exchangeRate !== undefined ? { exchange_rate: entry.exchangeRate } : {}),
   };
 }
 
@@ -40,6 +42,8 @@ export function fromEntryRow(row) {
       toAmount: row.to_amount != null ? Number(row.to_amount) : Number(row.amount),
       fromCurrency: row.from_currency || "BRL",
       toCurrency: row.to_currency || "BRL",
+      // undefined = coluna inexistente no banco; null = sem cotação informada
+      exchangeRate: row.exchange_rate === undefined ? undefined : row.exchange_rate != null ? Number(row.exchange_rate) : null,
     };
   }
   const out = {
