@@ -41,15 +41,26 @@ export function findSeries(entry, entries) {
 
 const fmtDate = (iso) => iso.split("-").reverse().join("/");
 
-/** Move todas as parcelas futuras (data > hoje) para newDate. Devolve { moves, total, error }. */
-export function planAnticipation(series, newDate, today) {
-  const future = series.filter((x) => x.date > today).sort((a, b) => (a.date < b.date ? -1 : 1));
+/** Só parcelas futuras (data depois de hoje) podem ser antecipadas, em ordem de data. */
+export function futureInstallments(series, today) {
+  return series.filter((x) => x.date > today).sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+/**
+ * Move as parcelas escolhidas (selectedIds: Set ou array de ids; omitido = todas as futuras) para newDate.
+ * Parcelas que não são futuras nunca são movidas, mesmo que estejam na seleção. Devolve { moves, total, error }.
+ */
+export function planAnticipation(series, newDate, today, selectedIds = null) {
+  const future = futureInstallments(series, today);
   if (future.length === 0) return { moves: [], total: 0, error: "Não há parcelas futuras para antecipar." };
+  const selected = selectedIds === null ? null : selectedIds instanceof Set ? selectedIds : new Set(selectedIds);
+  const chosen = selected ? future.filter((x) => selected.has(x.id)) : future;
+  if (chosen.length === 0) return { moves: [], total: 0, error: "Escolha pelo menos uma parcela." };
   if (!newDate) return { moves: [], total: 0, error: "Escolha a data." };
-  if (newDate >= future[0].date) {
-    return { moves: [], total: 0, error: `A data precisa ser antes de ${fmtDate(future[0].date)}, a próxima parcela.` };
+  if (newDate >= chosen[0].date) {
+    return { moves: [], total: 0, error: `A data precisa ser antes de ${fmtDate(chosen[0].date)}, a primeira parcela escolhida.` };
   }
-  const moves = future.map((x) => {
+  const moves = chosen.map((x) => {
     const info = installmentInfo(x);
     return { id: x.id, number: info.number, count: info.count, from: x.date, to: newDate, amount: Number(x.amount) };
   });

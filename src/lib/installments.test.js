@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { installmentInfo, findSeries, planAnticipation } from "./installments";
+import { installmentInfo, findSeries, futureInstallments, planAnticipation } from "./installments";
 
 const e = (over) => ({
   id: "x", type: "expense", date: "2026-01-01", description: "", amount: 100, account: "C6 Carbon",
@@ -72,6 +72,33 @@ describe("planAnticipation", () => {
   it("rejects a date that is not before the next installment", () => {
     expect(planAnticipation(series, "2026-10-24", today).error).toMatch(/24\/10\/2026/);
     expect(planAnticipation(series, "2026-11-01", today).error).toMatch(/antes de/);
+  });
+
+  it("moves only the chosen installments", () => {
+    const plan = planAnticipation(series, "2026-10-10", today, new Set(["c"]));
+    expect(plan.error).toBe("");
+    expect(plan.moves.map((m) => m.id)).toEqual(["c"]);
+    expect(plan.total).toBe(100);
+  });
+
+  it("checks the date against the earliest chosen installment, not the earliest future one", () => {
+    // parcela 5 (24/11) escolhida: 01/11 é antes dela, mesmo estando depois da parcela 4 (24/10)
+    expect(planAnticipation(series, "2026-11-01", today, ["c", "d"]).error).toBe("");
+    expect(planAnticipation(series, "2026-11-24", today, ["c", "d"]).error).toMatch(/24\/11\/2026/);
+  });
+
+  it("asks for at least one installment", () => {
+    expect(planAnticipation(series, "2026-10-10", today, new Set()).error).toMatch(/pelo menos uma parcela/);
+  });
+
+  it("never moves installments that are not in the future, even if chosen", () => {
+    const plan = planAnticipation(series, "2026-10-10", today, ["a", "b"]);
+    expect(plan.moves.map((m) => m.id)).toEqual(["b"]);
+    expect(planAnticipation(series, "2026-10-10", today, ["a"]).error).toMatch(/pelo menos uma parcela/);
+  });
+
+  it("lists the future installments in date order", () => {
+    expect(futureInstallments([series[3], series[0], series[2], series[1]], today).map((x) => x.id)).toEqual(["b", "c", "d"]);
   });
 
   it("requires a date", () => {

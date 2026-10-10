@@ -25,7 +25,7 @@ import { supabase } from "./lib/supabaseClient";
 import {
   SEX_OPTIONS, profileFromMetadata, profileToMetadata, validatePasswordChange, validateEmailChange,
 } from "./lib/profile";
-import { installmentInfo, findSeries, planAnticipation } from "./lib/installments";
+import { installmentInfo, findSeries, futureInstallments, planAnticipation } from "./lib/installments";
 
 const TYPE_META = {
   income: { label: "Entrada", color: "var(--income)", soft: "var(--income-soft)", icon: TrendingUp },
@@ -279,6 +279,10 @@ export default function App({ session }) {
 
   function openNewEntryForm() {
     resetFormFields();
+    // abre já na conta/cartão que está sendo visto na lista
+    if (accountFilterDashboard && accounts.some((a) => a.name === accountFilterDashboard && a.active !== false)) {
+      setFAccount(accountFilterDashboard);
+    }
     setFormOpen(true);
   }
 
@@ -504,17 +508,19 @@ export default function App({ session }) {
 
   function openAnticipation(entry) {
     const info = installmentInfo(entry);
+    const series = findSeries(entry, entries);
     setAnticipation({
       name: info ? info.base : entry.description,
       account: entry.account,
-      series: findSeries(entry, entries),
+      series,
+      selected: new Set(futureInstallments(series, todayISO()).map((x) => x.id)),
       date: todayISO(),
       busy: false,
       failed: false,
     });
   }
   async function confirmAnticipation() {
-    const plan = planAnticipation(anticipation.series, anticipation.date, todayISO());
+    const plan = planAnticipation(anticipation.series, anticipation.date, todayISO(), anticipation.selected);
     if (plan.error || plan.moves.length === 0) return;
     setAnticipation({ ...anticipation, busy: true, failed: false });
     try {
@@ -1773,7 +1779,8 @@ export default function App({ session }) {
         .bc-btn-primary:disabled, .bc-btn-ghost:disabled { opacity: 0.5; cursor: not-allowed; }
         @media (hover: none) { .bc-cancel-installments { opacity: 1; } }
         .bc-antic-list { max-height: 260px; overflow-y: auto; border: 1px solid var(--rule); border-radius: 10px; margin: 10px 0 12px; }
-        .bc-antic-row { display: grid; grid-template-columns: 54px 1fr auto; gap: 10px; align-items: center; padding: 7px 10px; font-size: 12.5px; border-bottom: 1px solid var(--rule); }
+        .bc-antic-row { display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; align-items: center; padding: 8px 10px; font-size: 12.5px; border-bottom: 1px solid var(--rule); cursor: pointer; }
+        .bc-antic-summary { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 12.5px; color: var(--ink-soft); }
         .bc-antic-row:last-child { border-bottom: none; }
         .bc-antic-row .num { font-family: 'IBM Plex Mono', monospace; color: var(--ink-soft); font-size: 11.5px; }
         .bc-antic-row .amt { font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
@@ -2903,9 +2910,17 @@ export default function App({ session }) {
       )}
 
       {anticipation && (() => {
-        const plan = planAnticipation(anticipation.series, anticipation.date, todayISO());
+        const today = todayISO();
+        const plan = planAnticipation(anticipation.series, anticipation.date, today, anticipation.selected);
+        const futureList = futureInstallments(anticipation.series, today);
         const currency = getAccountCurrency(anticipation.account);
         const fmtDay = (iso) => iso.split("-").reverse().join("/");
+        const toggleInstallment = (id) => {
+          const next = new Set(anticipation.selected);
+          if (next.has(id)) next.delete(id); else next.add(id);
+          setAnticipation({ ...anticipation, selected: next, failed: false });
+        };
+        const allSelected = futureList.length > 0 && futureList.every((x) => anticipation.selected.has(x.id));
         return (
           <div className="bc-modal-overlay" onClick={() => !anticipation.busy && setAnticipation(null)}>
             <div className="bc-modal" style={{ maxWidth: 520 }} onClick={(ev) => ev.stopPropagation()}>
@@ -2914,8 +2929,9 @@ export default function App({ session }) {
                 <button className="bc-modal-close" disabled={anticipation.busy} onClick={() => setAnticipation(null)} aria-label="Fechar"><X size={18} /></button>
               </div>
               <p className="bc-import-help">
-                <strong>{anticipation.name}</strong> · {anticipation.account}. As parcelas futuras abaixo passam para a data
-                escolhida. Só a data muda; valor, conta e categoria continuam iguais.
+                <strong>{anticipation.name}</strong> · {anticipation.account}. Marque as parcelas que quer antecipar: elas passam
+                para a data escolhida. Só a data muda; valor, conta e categoria continuam iguais.
+                Só parcelas futuras (depois de hoje) podem ser antecipadas.
               </p>
 
               <div className="bc-antic-date">
@@ -2928,20 +2944,36 @@ export default function App({ session }) {
 
               {plan.error && <p className="bc-acct-msg error" style={{ marginTop: 10 }}>{plan.error}</p>}
 
-              {plan.moves.length > 0 && (
+              {futureList.length > 0 && (
                 <>
                   <div className="bc-antic-list">
-                    {plan.moves.map((m) => (
-                      <div className="bc-antic-row" key={m.id}>
-                        <span className="num">{String(m.number).padStart(2, "0")}/{m.count}</span>
-                        <span>{fmtDay(m.from)} → <strong>{fmtDay(m.to)}</strong></span>
-                        <span className="amt">{fmt(m.amount, currency)}</span>
-                      </div>
-                    ))}
+                    {futureList.map((x) => {
+                      const info = installmentInfo(x);
+                      const checked = anticipation.selected.has(x.id);
+                      const move = plan.moves.find((m) => m.id === x.id);
+                      return (
+                        <label className="bc-antic-row" key={x.id}>
+                          <input type="checkbox" checked={checked} onChange={() => toggleInstallment(x.id)} aria-label={`Parcela ${info.number} de ${info.count}`} />
+                          <span>
+                            <span className="num">{String(info.number).padStart(2, "0")}/{info.count}</span>{" "}
+                            {fmtDay(x.date)}{move ? <> → <strong>{fmtDay(move.to)}</strong></> : null}
+                          </span>
+                          <span className="amt">{fmt(x.amount, currency)}</span>
+                        </label>
+                      );
+                    })}
                   </div>
-                  <p className="bc-import-help">
-                    {plan.moves.length} {plan.moves.length === 1 ? "parcela" : "parcelas"} · total {fmt(plan.total, currency)}
-                  </p>
+                  <div className="bc-antic-summary">
+                    <button className="bc-cancel-installments" style={{ opacity: 1, margin: 0 }}
+                      onClick={() => setAnticipation({ ...anticipation, selected: allSelected ? new Set() : new Set(futureList.map((x) => x.id)) })}>
+                      {allSelected ? "desmarcar todas" : "marcar todas"}
+                    </button>
+                    <span>
+                      {plan.moves.length > 0
+                        ? `${plan.moves.length} ${plan.moves.length === 1 ? "parcela" : "parcelas"} · total ${fmt(plan.total, currency)}`
+                        : `${anticipation.selected.size} marcadas`}
+                    </span>
+                  </div>
                 </>
               )}
 
