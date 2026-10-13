@@ -28,6 +28,7 @@ import {
 import { installmentInfo, findSeries, futureInstallments, planAnticipation } from "./lib/installments";
 import { conversionSummary, feeDescription } from "./lib/conversion";
 import { ACCOUNT_KINDS, normalizeKind, groupByKind } from "./lib/accountKinds";
+import { renameAccountInEntry } from "./lib/accountRename";
 
 const KIND_ICON = { corrente: Landmark, credito: CreditCard, internacional: Globe, investimentos: TrendingUp };
 const KIND_ACTIVE_CLASS = { corrente: "active-income", credito: "active-invest", internacional: "active-transfer", investimentos: "active-expense" };
@@ -673,9 +674,11 @@ export default function App({ session }) {
     if (!account) return;
     setAccounts((prev) => prev.map((a) => (a.name === oldName ? { ...a, name: clean } : a)));
     updateAccount(account.id, { name: clean }).catch(() => setSaveError(true));
-    setEntries((prev) => prev.map((e) => (e.account === oldName ? { ...e, account: clean } : e)));
+    setEntries((prev) => prev.map((e) => renameAccountInEntry(e, oldName, clean)));
     renameAccountInEntries(userId, oldName, clean).catch(() => setSaveError(true));
     if (defaultAccount === oldName) saveDefaultAccount(clean);
+    if (accountFilterDashboard === oldName) setAccountFilterDashboard(clean);
+    if (accountFilterReport === oldName) setAccountFilterReport(clean);
   }
   function deleteAccount(name) {
     const account = accounts.find((a) => a.name === name);

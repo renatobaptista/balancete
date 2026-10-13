@@ -120,13 +120,16 @@ export async function renameCategoryInEntries(userId, type, oldName, newName) {
   if (error) throw error;
 }
 
+// Lançamentos comuns usam `account`; transferências usam `from_account` e `to_account`.
 export async function renameAccountInEntries(userId, oldName, newName) {
-  const { error } = await supabase
-    .from("entries")
-    .update({ account: newName })
-    .eq("user_id", userId)
-    .eq("account", oldName);
-  if (error) throw error;
+  for (const column of ["account", "from_account", "to_account"]) {
+    const { error } = await supabase
+      .from("entries")
+      .update({ [column]: newName })
+      .eq("user_id", userId)
+      .eq(column, oldName);
+    if (error) throw error;
+  }
 }
 
 // --- accounts ---
