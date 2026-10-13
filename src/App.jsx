@@ -1450,7 +1450,19 @@ export default function App({ session }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [accounts, entries, cursor, accountFilterDashboard]
   );
-  const subStats = useMemo(() => subscriptionStats(monthEntriesInCurrency), [monthEntriesInCurrency]);
+  // Assinaturas do mês nas duas moedas (cada uma só com lançamentos da própria moeda; respeita o filtro de conta).
+  const subLines = useMemo(() => {
+    const stats = (cur) => subscriptionStats(monthEntries.filter((e) => e.type !== "transfer" && (e.currency || "BRL") === cur));
+    const has = (s) => s.count > 0 || s.refunds > 0;
+    const brl = stats("BRL");
+    const usd = stats("USD");
+    const lines = [];
+    // reais sempre aparece (mesmo zerado), exceto quando só há assinaturas em dólar; dólar só quando houver
+    if (has(brl) || !has(usd)) lines.push({ cur: "BRL", stats: brl });
+    if (has(usd)) lines.push({ cur: "USD", stats: usd });
+    return lines;
+  }, [monthEntries]);
+  const subHasAny = subLines.some((l) => l.stats.count > 0 || l.stats.refunds > 0);
   const ledgerEntries = useMemo(
     () => (onlySubscriptions ? monthEntries.filter((e) => e.subscription === true) : monthEntries),
     [monthEntries, onlySubscriptions]
@@ -1731,6 +1743,7 @@ export default function App({ session }) {
         .bc-invest-row > span:not(:first-child) { text-align: right; font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
         .bc-invest-head { background: var(--paper); color: var(--ink-soft); font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
         .bc-invest-total { font-weight: 600; border-bottom: none; background: var(--paper); }
+        .bc-sub-line-2 { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--rule); }
         .bc-sub-badge { font-size: 10px; color: var(--transfer); background: var(--transfer-soft); border-radius: 8px; padding: 1px 7px; margin-left: 6px; }
         .bc-currency-note { font-size: 11.5px; color: var(--ink-soft); margin-top: -12px; margin-bottom: 18px; }
         .bc-card {
@@ -2210,21 +2223,24 @@ export default function App({ session }) {
             </div>
             <div className="bc-card" style={{ "--card-accent": "var(--transfer)" }}>
               <div className="bc-card-label"><Repeat size={13} color="var(--transfer)" /> Assinaturas</div>
-              <div className="bc-card-value">{fmt(subStats.total, dashboardCurrency)}</div>
-              <div className="bc-card-sub">
-                {subStats.count > 0
-                  ? `${subStats.count} ${subStats.count === 1 ? "assinatura" : "assinaturas"} · ${fmtCompact(subStats.yearEstimate, dashboardCurrency)} por ano`
-                  : subStats.refunds > 0 ? "só estornos neste mês" : "nenhuma assinatura marcada neste mês"}
-                {subStats.refunds > 0 && ` · já descontados ${fmt(subStats.refunds, dashboardCurrency)} de estornos`}
-                {(subStats.count > 0 || subStats.refunds > 0 || onlySubscriptions) && (
-                  <>
-                    {" · "}
-                    <button className="bc-manage-link" onClick={() => setOnlySubscriptions(!onlySubscriptions)}>
-                      {onlySubscriptions ? "ver todos os lançamentos" : "ver só as assinaturas"}
-                    </button>
-                  </>
-                )}
-              </div>
+              {subLines.map((line, i) => (
+                <div key={line.cur} className={i > 0 ? "bc-sub-line-2" : undefined}>
+                  <div className="bc-card-value">{fmt(line.stats.total, line.cur)}</div>
+                  <div className="bc-card-sub">
+                    {line.stats.count > 0
+                      ? `${line.stats.count} ${line.stats.count === 1 ? "assinatura" : "assinaturas"}${subLines.length > 1 ? (line.cur === "USD" ? " em dólar" : " em reais") : ""} · ${fmtCompact(line.stats.yearEstimate, line.cur)} por ano`
+                      : line.stats.refunds > 0 ? "só estornos neste mês" : "nenhuma assinatura marcada neste mês"}
+                    {line.stats.refunds > 0 && ` · já descontados ${fmt(line.stats.refunds, line.cur)} de estornos`}
+                  </div>
+                </div>
+              ))}
+              {(subHasAny || onlySubscriptions) && (
+                <div className="bc-card-sub">
+                  <button className="bc-manage-link" onClick={() => setOnlySubscriptions(!onlySubscriptions)}>
+                    {onlySubscriptions ? "ver todos os lançamentos" : "ver só as assinaturas"}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
           {dashboardCurrency === "USD" && (
