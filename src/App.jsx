@@ -29,6 +29,7 @@ import { installmentInfo, findSeries, futureInstallments, planAnticipation } fro
 import { conversionSummary, feeDescription } from "./lib/conversion";
 import { ACCOUNT_KINDS, normalizeKind, groupByKind } from "./lib/accountKinds";
 import { renameAccountInEntry } from "./lib/accountRename";
+import { monthlyInvestmentReport } from "./lib/investments";
 import {
   buildSubscriptionEntries, nextSubscriptionEntries, subscriptionStats, isSubscriptionGroup, lastDateByGroup,
 } from "./lib/subscriptions";
@@ -167,6 +168,7 @@ export default function App({ session }) {
   const [fRecurringMonths, setFRecurringMonths] = useState(12);
   const [fSubscription, setFSubscription] = useState(false); // marca "É assinatura" ao editar
   const [onlySubscriptions, setOnlySubscriptions] = useState(false); // lista só as assinaturas do mês
+  const [investModalOpen, setInvestModalOpen] = useState(false); // janela "Investimentos do mês"
   const [accountFilterDashboard, setAccountFilterDashboard] = useState("");
   const [fDesc, setFDesc] = useState("");
   const [fNotes, setFNotes] = useState("");
@@ -1444,6 +1446,13 @@ export default function App({ session }) {
     return { income, expense, invest, balance: income - expense - invest };
   }, [monthEntriesInCurrency]);
 
+  const investReport = useMemo(
+    () => monthlyInvestmentReport({
+      accounts, entries, monthPrefix: monthKey(cursor.y, cursor.m), getBalance: getAccountBalance,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [accounts, entries, cursor]
+  );
   const subStats = useMemo(() => subscriptionStats(monthEntriesInCurrency), [monthEntriesInCurrency]);
   const ledgerEntries = useMemo(
     () => (onlySubscriptions ? monthEntries.filter((e) => e.subscription === true) : monthEntries),
@@ -1721,8 +1730,15 @@ export default function App({ session }) {
         .bc-welcome-steps { font-size: 13px; color: var(--ink); line-height: 1.9; padding-left: 18px; }
         .bc-welcome-steps .bc-manage-link { color: var(--invest); text-decoration: underline; font-size: 13px; }
         .bc-cards {
-          display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 22px;
+          display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 22px;
         }
+        .bc-invest-section { margin-bottom: 16px; }
+        .bc-invest-section h3 { font-family: 'Fraunces', serif; font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+        .bc-invest-table { border: 1px solid var(--rule); border-radius: 10px; overflow-x: auto; }
+        .bc-invest-row { display: grid; grid-template-columns: minmax(120px, 1.6fr) repeat(3, minmax(88px, 1fr)); gap: 8px; align-items: center; padding: 8px 10px; font-size: 12.5px; border-bottom: 1px solid var(--rule); }
+        .bc-invest-row > span:not(:first-child) { text-align: right; font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
+        .bc-invest-head { background: var(--paper); color: var(--ink-soft); font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
+        .bc-invest-total { font-weight: 600; border-bottom: none; background: var(--paper); }
         .bc-sub-badge { font-size: 10px; color: var(--transfer); background: var(--transfer-soft); border-radius: 8px; padding: 1px 7px; margin-left: 6px; }
         .bc-currency-note { font-size: 11.5px; color: var(--ink-soft); margin-top: -12px; margin-bottom: 18px; }
         .bc-card {
@@ -1819,7 +1835,6 @@ export default function App({ session }) {
         @media (max-width: 760px) {
           .bc-main-grid { grid-template-columns: 1fr; }
           .bc-cards { grid-template-columns: repeat(2, 1fr); }
-          .bc-card-wide { grid-column: 1 / -1; }
           .bc-form-grid { grid-template-columns: 1fr 1fr; }
         }
 
@@ -2155,18 +2170,28 @@ export default function App({ session }) {
               <div className="bc-card-label"><TrendingDown size={13} color="var(--expense)" /> Saídas</div>
               <div className="bc-card-value">{fmt(totals.expense, dashboardCurrency)}</div>
             </div>
-            <div className="bc-card" style={{ "--card-accent": "var(--invest)" }}>
-              <div className="bc-card-label"><PiggyBank size={13} color="var(--invest)" /> Investido</div>
-              <div className="bc-card-value">{fmt(totals.invest, dashboardCurrency)}</div>
-              <div className="bc-card-sub">Total acumulado: {fmtCompact(allTimeInvested, dashboardCurrency)}</div>
-            </div>
+            {["BRL", "USD"].map((cur) => {
+              const r = investReport[cur];
+              return (
+                <div className="bc-card" key={cur} style={{ "--card-accent": "var(--invest)" }}>
+                  <div className="bc-card-label"><PiggyBank size={13} color="var(--invest)" /> {cur === "USD" ? "Investido USD" : "Investido"}</div>
+                  <div className="bc-card-value">{fmt(r.totals.saldo, cur)}</div>
+                  <div className="bc-card-sub">
+                    {r.rows.length > 0
+                      ? <>aportes no mês: {fmt(r.totals.aportes, cur)} · </>
+                      : `nenhuma conta de investimento em ${cur === "USD" ? "US$" : "R$"} · `}
+                    <button className="bc-manage-link" onClick={() => setInvestModalOpen(true)}>ver por conta</button>
+                  </div>
+                </div>
+              );
+            })}
             <div className="bc-card" style={{ "--card-accent": "var(--ink)" }}>
               <div className="bc-card-label"><Wallet size={13} /> Saldo do mês</div>
               <div className="bc-card-value" style={{ color: totals.balance < 0 ? "var(--expense)" : "var(--ink)" }}>
                 {fmt(totals.balance, dashboardCurrency)}
               </div>
             </div>
-            <div className="bc-card bc-card-wide" style={{ "--card-accent": "var(--transfer)" }}>
+            <div className="bc-card" style={{ "--card-accent": "var(--transfer)" }}>
               <div className="bc-card-label"><Repeat size={13} color="var(--transfer)" /> Assinaturas</div>
               <div className="bc-card-value">{fmt(subStats.total, dashboardCurrency)}</div>
               <div className="bc-card-sub">
@@ -3226,6 +3251,56 @@ export default function App({ session }) {
           </div>
         );
       })()}
+
+      {investModalOpen && (
+        <div className="bc-modal-overlay" onClick={() => setInvestModalOpen(false)}>
+          <div className="bc-modal" style={{ maxWidth: 640 }} onClick={(ev) => ev.stopPropagation()}>
+            <div className="bc-modal-head">
+              <span className="bc-modal-title">Investimentos de {MONTH_NAMES[cursor.m]} {cursor.y}</span>
+              <button className="bc-modal-close" onClick={() => setInvestModalOpen(false)} aria-label="Fechar"><X size={18} /></button>
+            </div>
+            <p className="bc-import-help">
+              <strong>Aportes:</strong> o que entrou na conta por transferência de contas que não são de investimento, menos o
+              que voltou para elas. Transferências entre contas de investimento não contam. <strong>Rendimentos:</strong> entradas
+              menos saídas lançadas direto na conta. <strong>Saldo:</strong> o saldo da conta hoje.
+            </p>
+            {["BRL", "USD"].map((cur) => {
+              const r = investReport[cur];
+              return (
+                <div key={cur} className="bc-invest-section">
+                  <h3>{cur === "USD" ? "Contas em dólar (US$)" : "Contas em reais (R$)"}</h3>
+                  {r.rows.length === 0 ? (
+                    <p className="bc-import-help">Nenhuma conta de investimento ativa em {cur === "USD" ? "US$" : "R$"}.</p>
+                  ) : (
+                    <div className="bc-invest-table">
+                      <div className="bc-invest-row bc-invest-head">
+                        <span>Conta</span><span>Aportes</span><span>Rendimentos</span><span>Saldo</span>
+                      </div>
+                      {r.rows.map((row) => (
+                        <div className="bc-invest-row" key={row.name}>
+                          <span>{row.name}</span>
+                          <span>{fmt(row.aportes, cur)}</span>
+                          <span>{fmt(row.rendimentos, cur)}</span>
+                          <span>{fmt(row.saldo, cur)}</span>
+                        </div>
+                      ))}
+                      <div className="bc-invest-row bc-invest-total">
+                        <span>Total</span>
+                        <span>{fmt(r.totals.aportes, cur)}</span>
+                        <span>{fmt(r.totals.rendimentos, cur)}</span>
+                        <span>{fmt(r.totals.saldo, cur)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            <div className="bc-form-actions" style={{ justifyContent: "flex-end" }}>
+              <button className="bc-btn-ghost" onClick={() => setInvestModalOpen(false)}>Fechar</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {accountPanelOpen && (
         <div className="bc-modal-overlay" onClick={() => setAccountPanelOpen(false)}>
