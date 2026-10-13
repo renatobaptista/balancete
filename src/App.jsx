@@ -30,6 +30,7 @@ import { conversionSummary, feeDescription } from "./lib/conversion";
 import { ACCOUNT_KINDS, normalizeKind, groupByKind } from "./lib/accountKinds";
 import { renameAccountInEntry } from "./lib/accountRename";
 import { monthlyInvestmentReport } from "./lib/investments";
+import { monthTotals, dailyMovement } from "./lib/monthTotals";
 import {
   buildSubscriptionEntries, nextSubscriptionEntries, subscriptionStats, isSubscriptionGroup, lastDateByGroup,
 } from "./lib/subscriptions";
@@ -1436,15 +1437,10 @@ export default function App({ session }) {
     [monthEntries, dashboardCurrency]
   );
 
-  const totals = useMemo(() => {
-    let income = 0, expense = 0, invest = 0;
-    for (const e of monthEntriesInCurrency) {
-      if (e.type === "income") income += e.amount;
-      else if (e.type === "expense") expense += e.amount;
-      else if (e.type === "invest") invest += e.amount;
-    }
-    return { income, expense, invest, balance: income - expense - invest };
-  }, [monthEntriesInCurrency]);
+  const totals = useMemo(
+    () => monthTotals(monthEntriesInCurrency, accountFilterDashboard),
+    [monthEntriesInCurrency, accountFilterDashboard]
+  );
 
   const investReport = useMemo(
     () => monthlyInvestmentReport({
@@ -1479,13 +1475,7 @@ export default function App({ session }) {
 
   const dailyBalance = useMemo(() => {
     const daysInMonth = new Date(cursor.y, cursor.m + 1, 0).getDate();
-    const byDay = {};
-    for (const e of monthEntriesInCurrency) {
-      if (e.type === "transfer") continue;
-      const day = parseInt(e.date.slice(8, 10), 10);
-      const sign = e.type === "income" ? 1 : -1;
-      byDay[day] = (byDay[day] || 0) + sign * e.amount;
-    }
+    const byDay = dailyMovement(monthEntriesInCurrency, accountFilterDashboard);
     let running = 0;
     const data = [];
     for (let d = 1; d <= daysInMonth; d++) {
@@ -1493,7 +1483,7 @@ export default function App({ session }) {
       data.push({ day: d, saldo: Math.round(running * 100) / 100 });
     }
     return data;
-  }, [monthEntriesInCurrency, cursor]);
+  }, [monthEntriesInCurrency, cursor, accountFilterDashboard]);
 
   // Saldo ao fim de cada dia que tem lançamento no mês exibido (todas as contas na moeda do painel, ou só a conta filtrada).
   const { dayBalances, balanceToday } = useMemo(() => {
@@ -2167,10 +2157,16 @@ export default function App({ session }) {
             <div className="bc-card" style={{ "--card-accent": "var(--income)" }}>
               <div className="bc-card-label"><TrendingUp size={13} color="var(--income)" /> Entradas</div>
               <div className="bc-card-value">{fmt(totals.income, dashboardCurrency)}</div>
+              {totals.transferIn > 0 && (
+                <div className="bc-card-sub">inclui {fmt(totals.transferIn, dashboardCurrency)} de transferências</div>
+              )}
             </div>
             <div className="bc-card" style={{ "--card-accent": "var(--expense)" }}>
               <div className="bc-card-label"><TrendingDown size={13} color="var(--expense)" /> Saídas</div>
               <div className="bc-card-value">{fmt(totals.expense, dashboardCurrency)}</div>
+              {totals.transferOut > 0 && (
+                <div className="bc-card-sub">inclui {fmt(totals.transferOut, dashboardCurrency)} de transferências</div>
+              )}
             </div>
             {["BRL", "USD"].map((cur) => {
               const r = investReport[cur];
