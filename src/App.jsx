@@ -3,7 +3,7 @@ import {
   Plus, Trash2, ChevronLeft, ChevronRight, Wallet, TrendingUp,
   TrendingDown, PiggyBank, Target, X, Check, Settings, Pencil, Upload,
   Landmark, CreditCard, ArrowRightLeft, RotateCcw, AlertTriangle,
-  Download, HardDrive, LogOut, User
+  Download, HardDrive, LogOut, User, Globe
 } from "lucide-react";
 import {
   PieChart, Pie, Cell, Tooltip as ReTooltip, ResponsiveContainer,
@@ -27,6 +27,10 @@ import {
 } from "./lib/profile";
 import { installmentInfo, findSeries, futureInstallments, planAnticipation } from "./lib/installments";
 import { conversionSummary, feeDescription } from "./lib/conversion";
+import { ACCOUNT_KINDS, normalizeKind, groupByKind } from "./lib/accountKinds";
+
+const KIND_ICON = { corrente: Landmark, credito: CreditCard, internacional: Globe, investimentos: TrendingUp };
+const KIND_ACTIVE_CLASS = { corrente: "active-income", credito: "active-invest", internacional: "active-transfer", investimentos: "active-expense" };
 
 const TYPE_META = {
   income: { label: "Entrada", color: "var(--income)", soft: "var(--income-soft)", icon: TrendingUp },
@@ -742,7 +746,7 @@ export default function App({ session }) {
     return getAccountCurrency(accountName) === "USD" ? "US$" : "R$";
   }
   function getAccountKind(name) {
-    return accounts.find((a) => a.name === name)?.kind || "corrente";
+    return normalizeKind(accounts.find((a) => a.name === name)?.kind);
   }
   function findMatchingAccountName(rawText) {
     const key = normalizeHeader(rawText);
@@ -751,26 +755,18 @@ export default function App({ session }) {
     return found ? found.name : null;
   }
   function renderAccountOptions(excludeName) {
-    const correntes = sortPt(
-      accounts.filter((a) => a.kind === "corrente" && a.active !== false && a.name !== excludeName).map((a) => a.name)
-    );
-    const creditos = sortPt(
-      accounts.filter((a) => a.kind === "credito" && a.active !== false && a.name !== excludeName).map((a) => a.name)
+    const names = sortPt(
+      accounts.filter((a) => a.active !== false && a.name !== excludeName).map((a) => a.name)
     );
     const label = (name) => `${name}${getAccountCurrency(name) === "USD" ? " (US$)" : ""}`;
     return (
       <>
         <option value="">Selecione</option>
-        {correntes.length > 0 && (
-          <optgroup label="Contas correntes">
-            {correntes.map((name) => <option key={name} value={name}>{label(name)}</option>)}
+        {groupByKind(names, getAccountKind).map((g) => (
+          <optgroup key={g.value} label={g.group}>
+            {g.names.map((name) => <option key={name} value={name}>{label(name)}</option>)}
           </optgroup>
-        )}
-        {creditos.length > 0 && (
-          <optgroup label="Cartões de crédito">
-            {creditos.map((name) => <option key={name} value={name}>{label(name)}</option>)}
-          </optgroup>
-        )}
+        ))}
       </>
     );
   }
@@ -1912,6 +1908,7 @@ export default function App({ session }) {
         .bc-add-cat-row select { padding: 8px 10px; border-radius: 7px; border: 1px solid var(--rule-strong); background: var(--paper); font-size: 13px; }
         .bc-add-cat-row button { background: var(--ink); color: var(--paper); border: none; border-radius: 7px; padding: 0 14px; cursor: pointer; }
         .bc-account-kind-row { display: flex; gap: 8px; margin-top: 10px; }
+        .bc-account-kind-row .bc-type-btn { min-width: 130px; }
         .bc-cat-head-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
         .bc-active-toggle {
           font-size: 10.5px; padding: 3px 9px; border-radius: 12px; border: 1px solid var(--rule-strong);
@@ -2076,7 +2073,7 @@ export default function App({ session }) {
               <ol className="bc-welcome-steps">
                 <li>
                   <button className="bc-manage-link" onClick={() => setAccountManagerOpen(true)}>Cadastre suas contas</button>
-                  {" "}(correntes ou cartões de crédito).
+                  {" "}(correntes, cartões, internacionais ou de investimentos).
                 </li>
                 <li>
                   Registre seus lançamentos com{" "}
@@ -2377,20 +2374,11 @@ export default function App({ session }) {
                     onChange={(e) => setAccountFilterDashboard(e.target.value)}
                   >
                     <option value="">Todas as contas</option>
-                    {allAccounts.filter((a) => getAccountKind(a) === "corrente").length > 0 && (
-                      <optgroup label="Contas correntes">
-                        {allAccounts.filter((a) => getAccountKind(a) === "corrente").map((a) => (
-                          <option key={a} value={a}>{a}</option>
-                        ))}
+                    {groupByKind(allAccounts, getAccountKind).map((g) => (
+                      <optgroup key={g.value} label={g.group}>
+                        {g.names.map((a) => <option key={a} value={a}>{a}</option>)}
                       </optgroup>
-                    )}
-                    {allAccounts.filter((a) => getAccountKind(a) === "credito").length > 0 && (
-                      <optgroup label="Cartões de crédito">
-                        {allAccounts.filter((a) => getAccountKind(a) === "credito").map((a) => (
-                          <option key={a} value={a}>{a}</option>
-                        ))}
-                      </optgroup>
-                    )}
+                    ))}
                   </select>
                 )}
               </div>
@@ -2471,7 +2459,7 @@ export default function App({ session }) {
                       <span className="bc-ledger-cat">{e.category}{e.subcategory ? ` › ${e.subcategory}` : ""}</span>
                       {e.account && (
                         <span className="bc-ledger-account">
-                          {getAccountKind(e.account) === "credito" ? <CreditCard size={10} /> : <Landmark size={10} />}
+                          {(() => { const KindIcon = KIND_ICON[getAccountKind(e.account)]; return <KindIcon size={10} />; })()}
                           {e.account}{(e.currency || "BRL") === "USD" ? " (US$)" : ""}
                         </span>
                       )}
@@ -2663,20 +2651,11 @@ export default function App({ session }) {
                   onChange={(e) => setAccountFilterReport(e.target.value)}
                 >
                   <option value="">Todas</option>
-                  {allAccounts.filter((a) => getAccountKind(a) === "corrente").length > 0 && (
-                    <optgroup label="Contas correntes">
-                      {allAccounts.filter((a) => getAccountKind(a) === "corrente").map((a) => (
-                        <option key={a} value={a}>{a}</option>
-                      ))}
+                  {groupByKind(allAccounts, getAccountKind).map((g) => (
+                    <optgroup key={g.value} label={g.group}>
+                      {g.names.map((a) => <option key={a} value={a}>{a}</option>)}
                     </optgroup>
-                  )}
-                  {allAccounts.filter((a) => getAccountKind(a) === "credito").length > 0 && (
-                    <optgroup label="Cartões de crédito">
-                      {allAccounts.filter((a) => getAccountKind(a) === "credito").map((a) => (
-                        <option key={a} value={a}>{a}</option>
-                      ))}
-                    </optgroup>
-                  )}
+                  ))}
                 </select>
               </span>
             )}
@@ -2841,7 +2820,7 @@ export default function App({ session }) {
               <button className="bc-modal-close" onClick={() => setAccountManagerOpen(false)} aria-label="Fechar"><X size={18} /></button>
             </div>
             <p className="bc-import-help">
-              Cadastre as contas correntes e cartões de crédito de onde o dinheiro sai ou entra.
+              Cadastre as contas correntes, cartões de crédito, contas internacionais e de investimentos de onde o dinheiro sai ou entra.
             </p>
 
             {accounts.length === 0 && (
@@ -2878,19 +2857,19 @@ export default function App({ session }) {
                     </button>
                   </div>
                 </div>
-                <div className="bc-account-kind-row">
-                  <button
-                    className={`bc-type-btn ${acc.kind === "corrente" ? "active-income" : ""}`}
-                    onClick={() => setAccountKind(acc.name, "corrente")}
-                  >
-                    <Landmark size={14} /> Conta corrente
-                  </button>
-                  <button
-                    className={`bc-type-btn ${acc.kind === "credito" ? "active-invest" : ""}`}
-                    onClick={() => setAccountKind(acc.name, "credito")}
-                  >
-                    <CreditCard size={14} /> Cartão de crédito
-                  </button>
+                <div className="bc-account-kind-row" style={{ flexWrap: "wrap" }}>
+                  {ACCOUNT_KINDS.map((k) => {
+                    const Icon = KIND_ICON[k.value];
+                    return (
+                      <button
+                        key={k.value}
+                        className={`bc-type-btn ${normalizeKind(acc.kind) === k.value ? KIND_ACTIVE_CLASS[k.value] : ""}`}
+                        onClick={() => setAccountKind(acc.name, k.value)}
+                      >
+                        <Icon size={14} /> {k.label}
+                      </button>
+                    );
+                  })}
                 </div>
                 <div className="bc-account-kind-row">
                   <button
@@ -2937,8 +2916,7 @@ export default function App({ session }) {
                 style={{ minWidth: 140 }}
               />
               <select value={newAccountKind} onChange={(e) => setNewAccountKind(e.target.value)}>
-                <option value="corrente">Conta corrente</option>
-                <option value="credito">Cartão de crédito</option>
+                {ACCOUNT_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
               </select>
               <select value={newAccountCurrency} onChange={(e) => setNewAccountCurrency(e.target.value)}>
                 <option value="BRL">R$ Real</option>
@@ -3523,19 +3501,19 @@ export default function App({ session }) {
                             )}
                           </div>
                           {m.include !== false && (
-                            <div className="bc-account-kind-row">
-                              <button
-                                className={`bc-type-btn ${m.kind === "corrente" ? "active-income" : ""}`}
-                                onClick={() => updateImportAccountMap(rawAcc, { kind: "corrente" })}
-                              >
-                                <Landmark size={14} /> Conta corrente
-                              </button>
-                              <button
-                                className={`bc-type-btn ${m.kind === "credito" ? "active-invest" : ""}`}
-                                onClick={() => updateImportAccountMap(rawAcc, { kind: "credito" })}
-                              >
-                                <CreditCard size={14} /> Cartão de crédito
-                              </button>
+                            <div className="bc-account-kind-row" style={{ flexWrap: "wrap" }}>
+                              {ACCOUNT_KINDS.map((k) => {
+                                const Icon = KIND_ICON[k.value];
+                                return (
+                                  <button
+                                    key={k.value}
+                                    className={`bc-type-btn ${normalizeKind(m.kind) === k.value ? KIND_ACTIVE_CLASS[k.value] : ""}`}
+                                    onClick={() => updateImportAccountMap(rawAcc, { kind: k.value })}
+                                  >
+                                    <Icon size={14} /> {k.label}
+                                  </button>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
