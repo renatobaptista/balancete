@@ -70,6 +70,60 @@ describe("monthlyInvestmentReport", () => {
     expect(r.USD.totals.saldo).toBe(300);
   });
 
+  describe("with an account filter", () => {
+    const entries = [
+      transfer("1", "2026-10-05", "Itau", "Inter Invest", 2000),
+      transfer("2", "2026-10-06", "Inter PF", "Inter Invest", 700),
+      transfer("3", "2026-10-07", "Itau", "XP", 300),
+      transfer("4", "2026-10-09", "XP", "Itau", 100),
+      transfer("5", "2026-10-10", "Itau", "Nomad Invest", 1000, 180),
+      plain("6", "2026-10-12", "income", "XP", 40),
+    ];
+    const reportFor = (accountFilter) => monthlyInvestmentReport({
+      accounts, entries, monthPrefix: "2026-10", getBalance: (n) => balances[n] ?? 0, accountFilter,
+    });
+
+    it("has mode 'all' without a filter", () => {
+      expect(report(entries).mode).toBe("all");
+      expect(reportFor("").mode).toBe("all");
+    });
+
+    it("for a non-investment account, shows only what that account sent to investments (net of returns)", () => {
+      const r = reportFor("Itau");
+      expect(r.mode).toBe("source");
+      expect(r.BRL.rows.map((x) => [x.name, x.aportes])).toEqual([["Inter Invest", 2000], ["XP", 200]]);
+      expect(r.BRL.totals.aportes).toBe(2200);
+      expect(r.USD.rows.map((x) => [x.name, x.aportes])).toEqual([["Nomad Invest", 180]]);
+    });
+
+    it("for a non-investment account with no contributions, has no rows", () => {
+      const r = reportFor("Nomad USD");
+      expect(r.mode).toBe("source");
+      expect(r.BRL.rows).toEqual([]);
+      expect(r.BRL.totals).toEqual({ aportes: 0, rendimentos: 0, saldo: 0 });
+      expect(r.USD.rows).toEqual([]);
+    });
+
+    it("for an investment account, shows only that account in its own currency", () => {
+      const r = reportFor("XP");
+      expect(r.mode).toBe("investment");
+      expect(r.BRL.rows.map((x) => x.name)).toEqual(["XP"]);
+      expect(r.BRL.rows[0].aportes).toBe(200);
+      expect(r.BRL.rows[0].rendimentos).toBe(40);
+      expect(r.BRL.totals.saldo).toBe(500);
+      expect(r.USD.rows).toEqual([]);
+      const d = reportFor("Nomad Invest");
+      expect(d.USD.rows.map((x) => x.name)).toEqual(["Nomad Invest"]);
+      expect(d.BRL.rows).toEqual([]);
+    });
+
+    it("keeps an inactive investment account when it is the one being filtered", () => {
+      const r = reportFor("FTX");
+      expect(r.mode).toBe("investment");
+      expect(r.BRL.rows.map((x) => x.name)).toEqual(["FTX"]);
+    });
+  });
+
   it("returns empty totals when there are no investment accounts in a currency", () => {
     const r = monthlyInvestmentReport({ accounts: [accounts[0]], entries: [], monthPrefix: "2026-10", getBalance: () => 0 });
     expect(r.BRL).toEqual({ rows: [], totals: { aportes: 0, rendimentos: 0, saldo: 0 } });
