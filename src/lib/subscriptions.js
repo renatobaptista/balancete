@@ -46,17 +46,25 @@ export function nextSubscriptionEntries(groupEntries, extra, newId) {
   return out;
 }
 
-/** Custo das assinaturas (despesas marcadas) entre os lançamentos recebidos (já filtrados por mês/moeda). */
+/**
+ * Custo das assinaturas entre os lançamentos recebidos (já filtrados por mês/moeda): despesas marcadas
+ * menos estornos (entradas marcadas como assinatura). `count` conta só as despesas.
+ */
 export function subscriptionStats(entries) {
-  let total = 0;
+  let charges = 0;
+  let refunds = 0;
   let count = 0;
   for (const e of entries) {
-    if (e.type !== "expense" || e.subscription !== true) continue;
-    total += Number(e.amount);
-    count += 1;
+    if (e.subscription !== true) continue;
+    if (e.type === "expense") {
+      charges += Number(e.amount);
+      count += 1;
+    } else if (e.type === "income") {
+      refunds += Number(e.amount);
+    }
   }
-  total = Math.round(total * 100) / 100;
-  return { total, count, yearEstimate: Math.round(total * 12 * 100) / 100 };
+  const total = Math.round((charges - refunds) * 100) / 100;
+  return { total, count, refunds: Math.round(refunds * 100) / 100, yearEstimate: Math.round(total * 12 * 100) / 100 };
 }
 
 /** Lançamento ligado a um grupo sem contagem de parcelas = ocorrência de uma assinatura. */

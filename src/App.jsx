@@ -2214,8 +2214,9 @@ export default function App({ session }) {
               <div className="bc-card-sub">
                 {subStats.count > 0
                   ? `${subStats.count} ${subStats.count === 1 ? "assinatura" : "assinaturas"} · ${fmtCompact(subStats.yearEstimate, dashboardCurrency)} por ano`
-                  : "nenhuma assinatura marcada neste mês"}
-                {(subStats.count > 0 || onlySubscriptions) && (
+                  : subStats.refunds > 0 ? "só estornos neste mês" : "nenhuma assinatura marcada neste mês"}
+                {subStats.refunds > 0 && ` · já descontados ${fmt(subStats.refunds, dashboardCurrency)} de estornos`}
+                {(subStats.count > 0 || subStats.refunds > 0 || onlySubscriptions) && (
                   <>
                     {" · "}
                     <button className="bc-manage-link" onClick={() => setOnlySubscriptions(!onlySubscriptions)}>
@@ -2481,7 +2482,7 @@ export default function App({ session }) {
                           type="checkbox" checked={fSubscription}
                           onChange={(e) => setFSubscription(e.target.checked)}
                         />
-                        É assinatura
+                        {fType === "income" ? "É estorno de assinatura (abate do custo das assinaturas)" : "É assinatura"}
                       </label>
                     </div>
                   )}
@@ -2645,7 +2646,7 @@ export default function App({ session }) {
                     <div className="bc-ledger-desc">
                       <div className="bc-ledger-desc-main">{displayDesc}</div>
                       <span className="bc-ledger-cat">{e.category}{e.subcategory ? ` › ${e.subcategory}` : ""}</span>
-                      {e.subscription === true && <span className="bc-sub-badge">assinatura</span>}
+                      {e.subscription === true && <span className="bc-sub-badge">{e.type === "income" ? "estorno de assinatura" : "assinatura"}</span>}
                       {e.account && (
                         <span className="bc-ledger-account">
                           {(() => { const KindIcon = KIND_ICON[getAccountKind(e.account)]; return <KindIcon size={10} />; })()}

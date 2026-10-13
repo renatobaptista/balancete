@@ -68,14 +68,30 @@ describe("nextSubscriptionEntries (estender)", () => {
 describe("subscriptionStats", () => {
   const e = (over) => ({ type: "expense", amount: 10, subscription: true, ...over });
   it("sums only subscription expenses and estimates a year", () => {
-    const s = subscriptionStats([e({ amount: 55.9 }), e({ amount: 44.1 }), e({ subscription: false, amount: 999 }), { type: "income", amount: 500, subscription: true }]);
+    const s = subscriptionStats([e({ amount: 55.9 }), e({ amount: 44.1 }), e({ subscription: false, amount: 999 }), { type: "income", amount: 500, subscription: false }]);
     expect(s.total).toBeCloseTo(100, 2);
     expect(s.count).toBe(2);
+    expect(s.refunds).toBe(0);
     expect(s.yearEstimate).toBeCloseTo(1200, 2);
   });
+  it("subtracts refunds (income entries marked as subscription) from the total, without counting them", () => {
+    const s = subscriptionStats([
+      e({ amount: 59 }), e({ amount: 59 }),
+      { type: "income", amount: 50, subscription: true },
+      { type: "income", amount: 999, subscription: false }, // entrada comum, ignorada
+    ]);
+    expect(s.refunds).toBe(50);
+    expect(s.total).toBeCloseTo(68, 2); // 118 - 50
+    expect(s.count).toBe(2);
+    expect(s.yearEstimate).toBeCloseTo(816, 2);
+  });
+  it("can go to zero or negative when the refund is larger than the charges of the month", () => {
+    const s = subscriptionStats([e({ amount: 59 }), { type: "income", amount: 708, subscription: true }]);
+    expect(s.total).toBeCloseTo(-649, 2);
+  });
   it("is zero when there are none", () => {
-    expect(subscriptionStats([e({ subscription: false })])).toEqual({ total: 0, count: 0, yearEstimate: 0 });
-    expect(subscriptionStats([])).toEqual({ total: 0, count: 0, yearEstimate: 0 });
+    expect(subscriptionStats([e({ subscription: false })])).toEqual({ total: 0, count: 0, refunds: 0, yearEstimate: 0 });
+    expect(subscriptionStats([])).toEqual({ total: 0, count: 0, refunds: 0, yearEstimate: 0 });
   });
 });
 
