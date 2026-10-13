@@ -3,7 +3,7 @@ import {
   Plus, Trash2, ChevronLeft, ChevronRight, Wallet, TrendingUp,
   TrendingDown, PiggyBank, Target, X, Check, Settings, Pencil, Upload,
   Landmark, CreditCard, ArrowRightLeft, RotateCcw, AlertTriangle,
-  Download, HardDrive, LogOut, User, Globe
+  Download, HardDrive, LogOut, User, Globe, Repeat
 } from "lucide-react";
 import {
   PieChart, Pie, Cell, Tooltip as ReTooltip, ResponsiveContainer,
@@ -29,6 +29,9 @@ import { installmentInfo, findSeries, futureInstallments, planAnticipation } fro
 import { conversionSummary, feeDescription } from "./lib/conversion";
 import { ACCOUNT_KINDS, normalizeKind, groupByKind } from "./lib/accountKinds";
 import { renameAccountInEntry } from "./lib/accountRename";
+import {
+  buildSubscriptionEntries, nextSubscriptionEntries, subscriptionStats, isSubscriptionGroup, lastDateByGroup,
+} from "./lib/subscriptions";
 
 const KIND_ICON = { corrente: Landmark, credito: CreditCard, internacional: Globe, investimentos: TrendingUp };
 const KIND_ACTIVE_CLASS = { corrente: "active-income", credito: "active-invest", internacional: "active-transfer", investimentos: "active-expense" };
@@ -160,6 +163,10 @@ export default function App({ session }) {
   const [fToAmount, setFToAmount] = useState("");
   const [fCommercialRate, setFCommercialRate] = useState(""); // cotação comercial (R$ por US$), opcional
   const [fFees, setFFees] = useState(""); // taxas da conversão, opcional (só ao criar)
+  const [fRecurringOn, setFRecurringOn] = useState(false); // "Repetir todo mês" (assinatura)
+  const [fRecurringMonths, setFRecurringMonths] = useState(12);
+  const [fSubscription, setFSubscription] = useState(false); // marca "É assinatura" ao editar
+  const [onlySubscriptions, setOnlySubscriptions] = useState(false); // lista só as assinaturas do mês
   const [accountFilterDashboard, setAccountFilterDashboard] = useState("");
   const [fDesc, setFDesc] = useState("");
   const [fNotes, setFNotes] = useState("");
@@ -271,6 +278,9 @@ export default function App({ session }) {
     setFToAmount("");
     setFCommercialRate("");
     setFFees("");
+    setFRecurringOn(false);
+    setFRecurringMonths(12);
+    setFSubscription(false);
     setFDesc("");
     setFNotes("");
     setFDate(todayISO());
@@ -319,6 +329,7 @@ export default function App({ session }) {
       setFSubcategory(entry.subcategory || "");
       setFAccount(entry.account || "");
       setFToAmount("");
+      setFSubscription(!!entry.subscription);
     }
     setFormOpen(true);
   }
@@ -358,6 +369,12 @@ export default function App({ session }) {
     setCategories((prev) => ({ ...prev, expense: { ...prev.expense, [FEE_CATEGORY]: nextSubs } }));
     const write = exists ? Promise.resolve() : insertCategory(userId, "expense", FEE_CATEGORY);
     write.then(() => updateCategorySubcategories(userId, "expense", FEE_CATEGORY, nextSubs)).catch(() => setSaveError(true));
+  }
+
+  // Valor da marca "assinatura" a gravar: true se marcada; false só se a coluna já existe para esse lançamento.
+  function subscriptionValue(original) {
+    if (fSubscription) return true;
+    return original && original.subscription !== undefined ? false : undefined;
   }
 
   function saveEntry() {
@@ -445,16 +462,38 @@ export default function App({ session }) {
       if (!(categories[fType][fCategory] || []).includes(fSubcategory)) {
         addSubcategory(fType, fCategory, fSubcategory);
       }
-      if (original && original.installmentCount) {
+      if (original && original.installmentGroupId) {
         setPendingEditScope(true);
         return;
       }
       const nextEntry = {
         ...original, type: fType, amount: amountNum, category: fCategory, subcategory: fSubcategory,
         account: fAccount.trim(), currency, description: fDesc.trim(), notes: fNotes.trim(), date: fDate,
+        subscription: subscriptionValue(original),
       };
       setEntries((prev) => prev.map((e) => (e.id === editingEntryId ? nextEntry : e)));
       updateEntry(editingEntryId, nextEntry, userId).catch(() => setSaveError(true));
+      learnDescriptionRule(fDesc, fType, fCategory, fSubcategory);
+      resetFormFields();
+      return;
+    }
+
+    const useRecurring = fRecurringOn && (fType === "expense" || fType === "income");
+    if (useRecurring) {
+      const months = Math.min(60, Math.max(1, parseInt(fRecurringMonths, 10) || 12));
+      setFormError("");
+      if (!(categories[fType][fCategory] || []).includes(fSubcategory)) {
+        addSubcategory(fType, fCategory, fSubcategory);
+      }
+      const series = buildSubscriptionEntries({
+        base: {
+          type: fType, amount: amountNum, category: fCategory, subcategory: fSubcategory,
+          account: fAccount.trim(), currency, description: fDesc.trim(), notes: fNotes.trim(),
+        },
+        startDate: fDate, months, newId: uid, groupId: uid(),
+      });
+      setEntries((prev) => [...series, ...prev]);
+      insertEntriesBulk(series, userId).catch(() => setSaveError(true));
       learnDescriptionRule(fDesc, fType, fCategory, fSubcategory);
       resetFormFields();
       return;
@@ -536,6 +575,7 @@ export default function App({ session }) {
         description: fDesc.trim(),
         notes: fNotes.trim(),
         date: isThisOne ? fDate : e.date,
+        subscription: subscriptionValue(e),
       };
       changed.push(next);
       return next;
@@ -555,6 +595,15 @@ export default function App({ session }) {
       !(e.installmentGroupId === entry.installmentGroupId && e.date >= entry.date)
     ));
     deleteEntriesForInstallmentCancel(userId, entry.installmentGroupId, entry.date).catch(() => setSaveError(true));
+  }
+
+  // "Estender +12 meses": cria os próximos 12 lançamentos da assinatura depois do último.
+  function extendSubscription(entry) {
+    const group = entries.filter((e) => e.installmentGroupId === entry.installmentGroupId);
+    const more = nextSubscriptionEntries(group, 12, uid);
+    if (more.length === 0) return;
+    setEntries((prev) => [...more, ...prev]);
+    insertEntriesBulk(more, userId).catch(() => setSaveError(true));
   }
 
   function openAnticipation(entry) {
@@ -1395,6 +1444,13 @@ export default function App({ session }) {
     return { income, expense, invest, balance: income - expense - invest };
   }, [monthEntriesInCurrency]);
 
+  const subStats = useMemo(() => subscriptionStats(monthEntriesInCurrency), [monthEntriesInCurrency]);
+  const ledgerEntries = useMemo(
+    () => (onlySubscriptions ? monthEntries.filter((e) => e.subscription === true) : monthEntries),
+    [monthEntries, onlySubscriptions]
+  );
+  const lastDates = useMemo(() => lastDateByGroup(entries), [entries]);
+
   const allTimeInvested = useMemo(
     () => entries.filter((e) => e.type === "invest" && (e.currency || "BRL") === dashboardCurrency).reduce((s, e) => s + e.amount, 0),
     [entries, dashboardCurrency]
@@ -1665,8 +1721,9 @@ export default function App({ session }) {
         .bc-welcome-steps { font-size: 13px; color: var(--ink); line-height: 1.9; padding-left: 18px; }
         .bc-welcome-steps .bc-manage-link { color: var(--invest); text-decoration: underline; font-size: 13px; }
         .bc-cards {
-          display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 22px;
+          display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 22px;
         }
+        .bc-sub-badge { font-size: 10px; color: var(--transfer); background: var(--transfer-soft); border-radius: 8px; padding: 1px 7px; margin-left: 6px; }
         .bc-currency-note { font-size: 11.5px; color: var(--ink-soft); margin-top: -12px; margin-bottom: 18px; }
         .bc-card {
           background: var(--paper-card); border: 1px solid var(--rule);
@@ -1762,6 +1819,7 @@ export default function App({ session }) {
         @media (max-width: 760px) {
           .bc-main-grid { grid-template-columns: 1fr; }
           .bc-cards { grid-template-columns: repeat(2, 1fr); }
+          .bc-card-wide { grid-column: 1 / -1; }
           .bc-form-grid { grid-template-columns: 1fr 1fr; }
         }
 
@@ -2108,6 +2166,23 @@ export default function App({ session }) {
                 {fmt(totals.balance, dashboardCurrency)}
               </div>
             </div>
+            <div className="bc-card bc-card-wide" style={{ "--card-accent": "var(--transfer)" }}>
+              <div className="bc-card-label"><Repeat size={13} color="var(--transfer)" /> Assinaturas</div>
+              <div className="bc-card-value">{fmt(subStats.total, dashboardCurrency)}</div>
+              <div className="bc-card-sub">
+                {subStats.count > 0
+                  ? `${subStats.count} ${subStats.count === 1 ? "assinatura" : "assinaturas"} · ${fmtCompact(subStats.yearEstimate, dashboardCurrency)} por ano`
+                  : "nenhuma assinatura marcada neste mês"}
+                {(subStats.count > 0 || onlySubscriptions) && (
+                  <>
+                    {" · "}
+                    <button className="bc-manage-link" onClick={() => setOnlySubscriptions(!onlySubscriptions)}>
+                      {onlySubscriptions ? "ver todos os lançamentos" : "ver só as assinaturas"}
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
           </div>
           {dashboardCurrency === "USD" && (
             <p className="bc-currency-note">Mostrando apenas os valores em dólar da conta selecionada.</p>
@@ -2287,7 +2362,7 @@ export default function App({ session }) {
                       <label className="bc-installment-toggle">
                         <input
                           type="checkbox" checked={fInstallmentsOn}
-                          onChange={(e) => setFInstallmentsOn(e.target.checked)}
+                          onChange={(e) => { setFInstallmentsOn(e.target.checked); if (e.target.checked) setFRecurringOn(false); }}
                         />
                         Compra parcelada
                       </label>
@@ -2321,6 +2396,53 @@ export default function App({ session }) {
                       )}
                     </div>
                   )}
+                  {(fType === "expense" || fType === "income") && !editingEntryId && (
+                    <div className="bc-field">
+                      <label>&nbsp;</label>
+                      <label className="bc-installment-toggle">
+                        <input
+                          type="checkbox" checked={fRecurringOn}
+                          onChange={(e) => { setFRecurringOn(e.target.checked); if (e.target.checked) setFInstallmentsOn(false); }}
+                        />
+                        Repetir todo mês (assinatura)
+                      </label>
+                      {fRecurringOn && (
+                        <>
+                          <div className="bc-installment-row">
+                            <span>por</span>
+                            <input
+                              type="number" min="1" max="60" value={fRecurringMonths}
+                              onChange={(e) => setFRecurringMonths(e.target.value)}
+                            />
+                            <span>meses</span>
+                          </div>
+                          {fAmount && parseFloat(String(fAmount).replace(",", ".")) > 0 && fDate && (() => {
+                            const months = Math.min(60, Math.max(1, parseInt(fRecurringMonths, 10) || 12));
+                            const value = parseFloat(String(fAmount).replace(",", "."));
+                            const cur = currencyPrefix(fAccount) === "US$" ? "USD" : "BRL";
+                            const last = addMonthsToDate(fDate, months - 1).split("-").reverse().join("/");
+                            return (
+                              <span className="bc-installment-preview">
+                                Serão criados {months} lançamentos de {fmt(value, cur)}, do dia {fDate.split("-").reverse().join("/")} até {last}.
+                              </span>
+                            );
+                          })()}
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {editingEntryId && fType !== "transfer" && (
+                    <div className="bc-field">
+                      <label>&nbsp;</label>
+                      <label className="bc-installment-toggle">
+                        <input
+                          type="checkbox" checked={fSubscription}
+                          onChange={(e) => setFSubscription(e.target.checked)}
+                        />
+                        É assinatura
+                      </label>
+                    </div>
+                  )}
                   <div className="bc-field">
                     <label>Obs</label>
                     <input
@@ -2332,13 +2454,24 @@ export default function App({ session }) {
                 {pendingEditScope ? (
                   <div className="bc-installment-scope">
                     <p className="bc-import-help">
-                      Esse lançamento faz parte de uma compra parcelada. Aplicar as alterações para:
+                      {(() => {
+                        const orig = entries.find((x) => x.id === editingEntryId);
+                        return orig && isSubscriptionGroup(orig)
+                          ? "Esse lançamento faz parte de uma assinatura (repete todo mês). Aplicar as alterações para:"
+                          : "Esse lançamento faz parte de uma compra parcelada. Aplicar as alterações para:";
+                      })()}
                     </p>
-                    <div className="bc-installment-scope-actions">
-                      <button className="bc-btn-ghost" onClick={() => applyInstallmentEdit("single")}>Somente esta parcela</button>
-                      <button className="bc-btn-ghost" onClick={() => applyInstallmentEdit("future")}>Esta e as próximas</button>
-                      <button className="bc-btn-primary" onClick={() => applyInstallmentEdit("all")}>Todas as parcelas</button>
-                    </div>
+                    {(() => {
+                      const orig = entries.find((x) => x.id === editingEntryId);
+                      const sub = orig && isSubscriptionGroup(orig);
+                      return (
+                        <div className="bc-installment-scope-actions">
+                          <button className="bc-btn-ghost" onClick={() => applyInstallmentEdit("single")}>{sub ? "Somente este mês" : "Somente esta parcela"}</button>
+                          <button className="bc-btn-ghost" onClick={() => applyInstallmentEdit("future")}>{sub ? "Este e os próximos" : "Esta e as próximas"}</button>
+                          <button className="bc-btn-primary" onClick={() => applyInstallmentEdit("all")}>{sub ? "Todos os meses" : "Todas as parcelas"}</button>
+                        </div>
+                      );
+                    })()}
                     <button className="bc-manage-link" onClick={() => setPendingEditScope(false)}>voltar</button>
                   </div>
                 ) : (
@@ -2391,13 +2524,23 @@ export default function App({ session }) {
                   : <>Saldo atual (todas as contas): <strong>{fmt(balanceToday, dashboardCurrency)}</strong></>}
                 <span className="bc-ledger-until-today"> · {todayISO().split("-").reverse().join("/")}</span>
               </div>
-              {monthEntries.length === 0 && (
-                <div className="bc-ledger-empty">Nenhum lançamento em {MONTH_NAMES[cursor.m].toLowerCase()}. Que tal registrar o primeiro?</div>
+              {onlySubscriptions && (
+                <div className="bc-ledger-until-today" style={{ margin: "6px 0" }}>
+                  Mostrando só as assinaturas do mês.{" "}
+                  <button className="bc-manage-link" onClick={() => setOnlySubscriptions(false)}>ver todos</button>
+                </div>
               )}
-              {monthEntries.map((e, idx) => {
+              {ledgerEntries.length === 0 && (
+                <div className="bc-ledger-empty">
+                  {onlySubscriptions
+                    ? `Nenhuma assinatura marcada em ${MONTH_NAMES[cursor.m].toLowerCase()}.`
+                    : `Nenhum lançamento em ${MONTH_NAMES[cursor.m].toLowerCase()}. Que tal registrar o primeiro?`}
+                </div>
+              )}
+              {ledgerEntries.map((e, idx) => {
                 const day = e.date.slice(8, 10);
                 const month = e.date.slice(5, 7);
-                const isFirstOfDay = idx === 0 || monthEntries[idx - 1].date !== e.date;
+                const isFirstOfDay = idx === 0 || ledgerEntries[idx - 1].date !== e.date;
                 const dayHead = isFirstOfDay ? (
                   <div className="bc-ledger-dayhead">
                     <span>{day}/{month} · {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR", { weekday: "long" })}</span>
@@ -2460,6 +2603,7 @@ export default function App({ session }) {
                     <div className="bc-ledger-desc">
                       <div className="bc-ledger-desc-main">{displayDesc}</div>
                       <span className="bc-ledger-cat">{e.category}{e.subcategory ? ` › ${e.subcategory}` : ""}</span>
+                      {e.subscription === true && <span className="bc-sub-badge">assinatura</span>}
                       {e.account && (
                         <span className="bc-ledger-account">
                           {(() => { const KindIcon = KIND_ICON[getAccountKind(e.account)]; return <KindIcon size={10} />; })()}
@@ -2469,6 +2613,16 @@ export default function App({ session }) {
                       {e.installmentCount && e.installmentNumber < e.installmentCount && (
                         <button className="bc-cancel-installments" onClick={() => cancelRemainingInstallments(e)}>
                           cancelar parcelas restantes
+                        </button>
+                      )}
+                      {isSubscriptionGroup(e) && (
+                        <button className="bc-cancel-installments" onClick={() => cancelRemainingInstallments(e)}>
+                          cancelar assinatura
+                        </button>
+                      )}
+                      {isSubscriptionGroup(e) && lastDates.get(e.installmentGroupId) === e.date && (
+                        <button className="bc-cancel-installments bc-anticipate" onClick={() => extendSubscription(e)}>
+                          estender +12 meses
                         </button>
                       )}
                       {(() => {

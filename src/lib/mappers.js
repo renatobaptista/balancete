@@ -20,8 +20,9 @@ export function toEntryRow(entry, userId) {
     installment_group_id: entry.installmentGroupId || null,
     installment_number: entry.installmentNumber || null,
     installment_count: entry.installmentCount || null,
-    // só vai no payload quando há cotação (ou para limpá-la): assim funciona mesmo sem a coluna no banco
+    // só vão no payload quando definidos: assim tudo funciona mesmo sem essas colunas no banco
     ...(isTransfer && entry.exchangeRate !== undefined ? { exchange_rate: entry.exchangeRate } : {}),
+    ...(!isTransfer && entry.subscription !== undefined ? { is_subscription: entry.subscription } : {}),
   };
 }
 
@@ -58,6 +59,8 @@ export function fromEntryRow(row) {
     out.installmentNumber = row.installment_number;
     out.installmentCount = row.installment_count;
   }
+  // undefined = coluna inexistente no banco; true/false = marcação de assinatura
+  if (row.is_subscription !== undefined) out.subscription = !!row.is_subscription;
   return out;
 }
 

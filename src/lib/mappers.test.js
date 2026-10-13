@@ -4,6 +4,39 @@ import {
   fromCategoryRows, toGoalsRow, fromGoalsRow, fromRuleRows,
 } from "./mappers";
 
+describe("subscription flag", () => {
+  const expense = {
+    id: "s1", type: "expense", amount: 55.9, category: "TV", subcategory: "Streaming", account: "C6", currency: "BRL",
+    description: "Netflix", notes: "", date: "2026-11-03",
+  };
+
+  it("does not send is_subscription when undefined (works even without the DB column)", () => {
+    expect(toEntryRow(expense, "u1")).not.toHaveProperty("is_subscription");
+  });
+
+  it("sends true or false when set", () => {
+    expect(toEntryRow({ ...expense, subscription: true }, "u1").is_subscription).toBe(true);
+    expect(toEntryRow({ ...expense, subscription: false }, "u1").is_subscription).toBe(false);
+  });
+
+  it("reads it back; undefined when the column does not exist", () => {
+    const row = toEntryRow({ ...expense, subscription: true }, "u1");
+    expect(fromEntryRow(row).subscription).toBe(true);
+    expect(fromEntryRow({ ...row, is_subscription: false }).subscription).toBe(false);
+    const { is_subscription, ...semColuna } = row;
+    expect(fromEntryRow(semColuna).subscription).toBeUndefined();
+  });
+
+  it("keeps a subscription group link without installment numbering", () => {
+    const row = toEntryRow({ ...expense, installmentGroupId: "11111111-1111-1111-1111-111111111111", subscription: true }, "u1");
+    expect(row.installment_group_id).toBe("11111111-1111-1111-1111-111111111111");
+    expect(row.installment_count).toBeNull();
+    const back = fromEntryRow(row);
+    expect(back.installmentGroupId).toBe("11111111-1111-1111-1111-111111111111");
+    expect(back.installmentCount).toBeNull();
+  });
+});
+
 describe("transfer exchange rate", () => {
   const transfer = {
     id: "t1", type: "transfer", amount: 5000, toAmount: 880, fromCurrency: "BRL", toCurrency: "USD",
