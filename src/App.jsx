@@ -52,11 +52,11 @@ const MONTH_NAMES = [
 const MONTH_ABBR = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
 function fmt(n, currency = "BRL") {
-  return (Number(n) || 0).toLocaleString(currency === "USD" ? "en-US" : "pt-BR", { style: "currency", currency });
+  return (Number(n) || 0).toLocaleString("pt-BR", { style: "currency", currency });
 }
 function fmtCompact(n, currency = "BRL") {
   const v = Number(n) || 0;
-  return v.toLocaleString(currency === "USD" ? "en-US" : "pt-BR", { style: "currency", currency, maximumFractionDigits: 0 });
+  return v.toLocaleString("pt-BR", { style: "currency", currency, maximumFractionDigits: 0 });
 }
 function todayISO() {
   const d = new Date();
