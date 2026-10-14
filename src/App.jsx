@@ -2228,7 +2228,7 @@ export default function App({ session }) {
                   <div className="bc-card-value">{fmt(line.stats.total, line.cur)}</div>
                   <div className="bc-card-sub">
                     {line.stats.count > 0
-                      ? `${line.stats.count} ${line.stats.count === 1 ? "assinatura" : "assinaturas"}${subLines.length > 1 ? (line.cur === "USD" ? " em dólar" : " em reais") : ""} · ${fmtCompact(line.stats.yearEstimate, line.cur)} por ano`
+                      ? `${line.stats.count} ${line.stats.count === 1 ? "assinatura" : "assinaturas"}${subLines.length > 1 ? (line.cur === "USD" ? " em dólar" : " em reais") : ""} · ${fmt(line.stats.yearEstimate, line.cur)} por ano`
                       : line.stats.refunds > 0 ? "só estornos neste mês" : "nenhuma assinatura marcada neste mês"}
                     {line.stats.refunds > 0 && ` · já descontados ${fmt(line.stats.refunds, line.cur)} de estornos`}
                   </div>

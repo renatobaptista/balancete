@@ -66,29 +66,67 @@ describe("nextSubscriptionEntries (estender)", () => {
 });
 
 describe("subscriptionStats", () => {
-  const e = (over) => ({ type: "expense", amount: 10, subscription: true, ...over });
-  it("sums only subscription expenses and estimates a year", () => {
-    const s = subscriptionStats([e({ amount: 55.9 }), e({ amount: 44.1 }), e({ subscription: false, amount: 999 }), { type: "income", amount: 500, subscription: false }]);
+  const e = (over) => ({ type: "expense", amount: 10, subscription: true, description: "Netflix", account: "C6", ...over });
+
+  it("sums only subscription expenses", () => {
+    const s = subscriptionStats([e({ description: "A", amount: 55.9 }), e({ description: "B", amount: 44.1 }), e({ subscription: false, amount: 999 }), { type: "income", amount: 500, subscription: false }]);
     expect(s.total).toBeCloseTo(100, 2);
     expect(s.count).toBe(2);
     expect(s.refunds).toBe(0);
-    expect(s.yearEstimate).toBeCloseTo(1200, 2);
   });
-  it("subtracts refunds (income entries marked as subscription) from the total, without counting them", () => {
+
+  it("counts distinct subscriptions: same name and account count once, even with several entries in the month", () => {
+    const duo = (amount) => e({ description: "Duo Gourmet", account: "Inter Black", amount });
+    const s = subscriptionStats([duo(59), duo(59), duo(59), e({ description: "Netflix", account: "C6", amount: 55.9 })]);
+    expect(s.total).toBeCloseTo(232.9, 2); // 3 x 59 + 55,90
+    expect(s.count).toBe(2);
+  });
+
+  it("treats the same name on different accounts as different subscriptions, ignoring case, accents and (n / m)", () => {
     const s = subscriptionStats([
-      e({ amount: 59 }), e({ amount: 59 }),
-      { type: "income", amount: 50, subscription: true },
+      e({ description: "iCloud", account: "Nomad" }), e({ description: "ICLOUD", account: "Nomad" }),
+      e({ description: "iCloud", account: "Itau" }),
+      e({ description: "Livelo (10 / 12)", account: "C6 Carbon" }), e({ description: "livelo", account: "C6 Carbon" }),
+    ]);
+    expect(s.count).toBe(3);
+  });
+
+  it("estimates a year as 12 x the monthly charge of each distinct subscription (the largest entry), not 12 x the month total", () => {
+    const duo = (amount) => e({ description: "Duo Gourmet", account: "Inter Black", amount });
+    // 12 parcelas de 59 no mesmo mês = total 708, mas a assinatura custa 59 por mês
+    const parcelas = Array.from({ length: 12 }, () => duo(59));
+    const s = subscriptionStats([...parcelas, e({ description: "Netflix", account: "C6", amount: 55.9 })]);
+    expect(s.total).toBeCloseTo(763.9, 2);
+    expect(s.yearEstimate).toBeCloseTo(12 * (59 + 55.9), 2);
+  });
+
+  it("matches the user's dollar example: 9,99 + 19,90 per month is 358,68 per year", () => {
+    const s = subscriptionStats([
+      e({ description: "iCloud", account: "Nomad USD", amount: 9.99 }),
+      e({ description: "Apple Care", account: "Nomad USD", amount: 19.9 }),
+    ]);
+    expect(s.total).toBeCloseTo(29.89, 2);
+    expect(s.count).toBe(2);
+    expect(s.yearEstimate).toBeCloseTo(358.68, 2);
+  });
+
+  it("subtracts refunds from the total but not from the yearly estimate, and does not count them", () => {
+    const s = subscriptionStats([
+      e({ description: "A", amount: 59 }), e({ description: "B", amount: 59 }),
+      { type: "income", amount: 50, subscription: true, description: "Estorno A", account: "C6" },
       { type: "income", amount: 999, subscription: false }, // entrada comum, ignorada
     ]);
     expect(s.refunds).toBe(50);
     expect(s.total).toBeCloseTo(68, 2); // 118 - 50
     expect(s.count).toBe(2);
-    expect(s.yearEstimate).toBeCloseTo(816, 2);
+    expect(s.yearEstimate).toBeCloseTo(12 * 118, 2);
   });
-  it("can go to zero or negative when the refund is larger than the charges of the month", () => {
+
+  it("can go negative when the refund is larger than the charges of the month", () => {
     const s = subscriptionStats([e({ amount: 59 }), { type: "income", amount: 708, subscription: true }]);
     expect(s.total).toBeCloseTo(-649, 2);
   });
+
   it("is zero when there are none", () => {
     expect(subscriptionStats([e({ subscription: false })])).toEqual({ total: 0, count: 0, refunds: 0, yearEstimate: 0 });
     expect(subscriptionStats([])).toEqual({ total: 0, count: 0, refunds: 0, yearEstimate: 0 });

@@ -46,25 +46,39 @@ export function nextSubscriptionEntries(groupEntries, extra, newId) {
   return out;
 }
 
+const normName = (s) =>
+  String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+    .replace(/\s*\(\s*\d+\s*\/\s*\d+\s*\)\s*$/, "").replace(/\s+/g, " ").trim();
+
 /**
- * Custo das assinaturas entre os lançamentos recebidos (já filtrados por mês/moeda): despesas marcadas
- * menos estornos (entradas marcadas como assinatura). `count` conta só as despesas.
+ * Custo das assinaturas entre os lançamentos recebidos (já filtrados por mês/moeda).
+ * - total: despesas marcadas menos estornos (entradas marcadas como assinatura);
+ * - count: assinaturas DISTINTAS (mesmo nome e mesma conta contam uma vez, mesmo com vários lançamentos no mês);
+ * - yearEstimate: 12 x a cobrança mensal de cada assinatura distinta (o maior lançamento dela no mês), sem
+ *   estornos, para não distorcer quando várias parcelas caem no mesmo mês.
  */
 export function subscriptionStats(entries) {
   let charges = 0;
   let refunds = 0;
-  let count = 0;
+  const monthlyCharge = new Map(); // assinatura distinta -> maior lançamento do mês
   for (const e of entries) {
     if (e.subscription !== true) continue;
     if (e.type === "expense") {
-      charges += Number(e.amount);
-      count += 1;
+      const amount = Number(e.amount);
+      charges += amount;
+      const key = `${normName(e.description)}|${e.account || ""}`;
+      if (!monthlyCharge.has(key) || amount > monthlyCharge.get(key)) monthlyCharge.set(key, amount);
     } else if (e.type === "income") {
       refunds += Number(e.amount);
     }
   }
-  const total = Math.round((charges - refunds) * 100) / 100;
-  return { total, count, refunds: Math.round(refunds * 100) / 100, yearEstimate: Math.round(total * 12 * 100) / 100 };
+  const monthlySum = Array.from(monthlyCharge.values()).reduce((s, v) => s + v, 0);
+  return {
+    total: Math.round((charges - refunds) * 100) / 100,
+    count: monthlyCharge.size,
+    refunds: Math.round(refunds * 100) / 100,
+    yearEstimate: Math.round(monthlySum * 12 * 100) / 100,
+  };
 }
 
 /** Lançamento ligado a um grupo sem contagem de parcelas = ocorrência de uma assinatura. */
