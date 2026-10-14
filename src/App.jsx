@@ -1799,6 +1799,8 @@ export default function App({ session }) {
           font-family: 'IBM Plex Mono', monospace; font-size: 19px; font-weight: 500;
         }
         .bc-card-sub { font-size: 11px; color: var(--ink-soft); margin-top: 4px; }
+        .bc-card-context { font-size: 11.5px; color: var(--ink); margin-top: 2px; overflow-wrap: anywhere; }
+        .bc-card-label svg { flex-shrink: 0; }
 
         .bc-add-row { margin-bottom: 18px; }
         .bc-add-toggle {
@@ -1898,7 +1900,7 @@ export default function App({ session }) {
         .bc-ledger-account-balance {
           font-size: 11.5px; color: var(--ink-soft); padding: 0 16px 10px; font-family: 'IBM Plex Mono', monospace;
         }
-        .bc-ledger-account-balance strong { color: var(--ink); font-weight: 500; }
+        .bc-ledger-account-balance strong { color: var(--ink); font-weight: 500; white-space: nowrap; }
         .bc-ledger-until-today { opacity: 0.8; }
         .bc-ledger-head-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
         .bc-period-btn {
@@ -1907,11 +1909,17 @@ export default function App({ session }) {
         }
         .bc-period-btn.is-open { background: var(--ink); color: var(--paper); border-color: var(--ink); }
         .bc-period-panel { padding: 10px 16px 12px; border-top: 1px solid var(--rule); background: var(--paper); }
-        .bc-period-fields { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
-        .bc-period-fields label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-soft); }
-        .bc-period-fields input { padding: 5px 8px; border-radius: 7px; border: 1px solid var(--rule-strong); background: var(--paper-card); font-size: 12.5px; }
-        .bc-period-presets { display: flex; gap: 6px; flex-wrap: wrap; }
-        .bc-period-summary { padding: 10px 16px; border-top: 1px solid var(--rule); font-size: 12.5px; line-height: 1.7; }
+        .bc-period-row { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin-bottom: 8px; }
+        .bc-period-row label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-soft); }
+        .bc-period-row input { padding: 5px 8px; border-radius: 7px; border: 1px solid var(--rule-strong); background: var(--paper-card); font-size: 12.5px; }
+        .bc-period-chip { padding: 3px 11px; border-radius: 14px; border: 1px solid var(--rule-strong); background: var(--paper-card); font-size: 11.5px; color: var(--ink); cursor: pointer; }
+        .bc-period-chip:hover { background: var(--rule); }
+        .bc-period-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 4px 0 8px; }
+        .bc-period-tiles > div { background: var(--paper-card); border: 1px solid var(--rule); border-radius: 8px; padding: 7px 10px; min-width: 0; }
+        .bc-period-tiles span { display: block; font-size: 10px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.04em; }
+        .bc-period-tiles strong { font-family: 'IBM Plex Mono', monospace; font-size: 13px; font-weight: 500; white-space: nowrap; }
+        .bc-period-note { font-size: 11.5px; color: var(--ink-soft); font-family: 'IBM Plex Mono', monospace; line-height: 1.6; }
+        .bc-period-note strong { color: var(--ink); font-weight: 500; white-space: nowrap; }
         .bc-ledger-more { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--rule); font-size: 12px; color: var(--ink-soft); }
         .bc-ledger-dayhead {
           display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 7px 16px;
@@ -1980,6 +1988,33 @@ export default function App({ session }) {
         .bc-ledger-row:hover .bc-ledger-del { opacity: 1; }
         .bc-ledger-del:hover { color: var(--expense); }
         .bc-ledger-empty { padding: 30px 16px; text-align: center; color: var(--ink-soft); font-size: 13px; }
+        /* celular: cabeçalho, lista de lançamentos e cartões sem cortar nem apertar */
+        @media (max-width: 560px) {
+          .bc-root { padding: 16px 14px; }
+          .bc-header-right { flex-wrap: wrap; width: 100%; gap: 8px; }
+          .bc-month-nav { width: 100%; justify-content: space-between; }
+          .bc-month-label { min-width: 0; flex: 1; }
+          .bc-card { padding: 12px 12px; min-width: 0; }
+          .bc-card-value { font-size: 16px; overflow-wrap: anywhere; }
+          .bc-ledger-head { flex-wrap: wrap; }
+          .bc-ledger-head-actions { width: 100%; }
+          .bc-ledger-filter { flex: 1; min-width: 0; max-width: 100%; }
+          .bc-ledger-row { flex-wrap: wrap; row-gap: 4px; padding: 10px 12px; }
+          .bc-ledger-date { width: auto; }
+          .bc-ledger-amount { order: 2; margin-left: auto; }
+          .bc-ledger-edit { order: 3; }
+          .bc-ledger-del { order: 4; }
+          .bc-ledger-desc { order: 5; flex: 1 1 100%; }
+          .bc-ledger-desc-main { white-space: normal; }
+          .bc-ledger-notes { max-width: 100%; }
+          .bc-ledger-dayhead { flex-wrap: wrap; row-gap: 2px; }
+          .bc-period-tiles { gap: 6px; }
+          .bc-period-tiles > div { padding: 6px 8px; }
+          .bc-period-tiles strong { font-size: 11.5px; }
+        }
+        @media (hover: none) {
+          .bc-ledger-edit, .bc-ledger-del { opacity: 0.6; }
+        }
 
         .bc-panel {
           background: var(--paper-card); border: 1px solid var(--rule); border-radius: 12px;
@@ -2239,13 +2274,14 @@ export default function App({ session }) {
               const mode = investReport.mode;
               const coin = cur === "USD" ? "US$" : "R$";
               const base = cur === "USD" ? "Investido USD" : "Investido";
-              const label = mode === "source" ? `${base} a partir de ${accountFilterDashboard}`
-                : mode === "investment" ? `${base} em ${accountFilterDashboard}` : base;
+              // rótulo curto (cabe em uma linha); o contexto do filtro vai na linha pequena de baixo
+              const context = mode === "source" ? `a partir de ${accountFilterDashboard}`
+                : mode === "investment" ? `em ${accountFilterDashboard}` : "";
               const value = mode === "source" ? r.totals.aportes : r.totals.saldo;
               let sub;
               if (mode === "source") {
                 sub = r.rows.length > 0
-                  ? `no mês, em ${r.rows.length} ${r.rows.length === 1 ? "conta" : "contas"}`
+                  ? `aportes no mês, em ${r.rows.length} ${r.rows.length === 1 ? "conta" : "contas"}`
                   : "nenhum aporte neste mês";
               } else if (r.rows.length > 0) {
                 sub = <>aportes no mês: {fmt(r.totals.aportes, cur)}</>;
@@ -2254,8 +2290,9 @@ export default function App({ session }) {
               }
               return (
                 <div className="bc-card" key={cur} style={{ "--card-accent": "var(--invest)" }}>
-                  <div className="bc-card-label"><PiggyBank size={13} color="var(--invest)" /> {label}</div>
+                  <div className="bc-card-label"><PiggyBank size={13} color="var(--invest)" /> {base}</div>
                   <div className="bc-card-value">{fmt(value, cur)}</div>
+                  {context && <div className="bc-card-context">{context}</div>}
                   <div className="bc-card-sub">
                     {sub}
                     {r.rows.length > 0 && (
@@ -2614,11 +2651,7 @@ export default function App({ session }) {
           <div className="bc-main-grid">
             <div className="bc-ledger">
               <div className="bc-ledger-head">
-                <span>
-                  {periodActive
-                    ? `Lançamentos de ${periodFrom.split("-").reverse().join("/")} a ${periodTo.split("-").reverse().join("/")}`
-                    : "Lançamentos do mês"}
-                </span>
+                <span>{periodActive ? "Lançamentos do período" : "Lançamentos do mês"}</span>
                 <span className="bc-ledger-head-actions">
                   <button
                     className={`bc-period-btn ${periodPanelOpen ? "is-open" : ""}`}
@@ -2647,9 +2680,15 @@ export default function App({ session }) {
                   )}
                 </span>
               </div>
-              {periodPanelOpen && (
+              <div className="bc-ledger-account-balance">
+                {accountFilterDashboard
+                  ? <>Saldo atual em {accountFilterDashboard}: <strong>{fmt(getAccountBalance(accountFilterDashboard), getAccountCurrency(accountFilterDashboard))}</strong></>
+                  : <>Saldo atual (todas as contas): <strong>{fmt(balanceToday, dashboardCurrency)}</strong></>}
+                <span className="bc-ledger-until-today"> · {todayISO().split("-").reverse().join("/")}</span>
+              </div>
+              {periodPanelOpen ? (
                 <div className="bc-period-panel">
-                  <div className="bc-period-fields">
+                  <div className="bc-period-row">
                     <label>De
                       <input type="date" value={periodFrom} onChange={(e) => { setPeriodFrom(e.target.value); setPeriodLimit(400); }} />
                     </label>
@@ -2657,55 +2696,38 @@ export default function App({ session }) {
                       <input type="date" value={periodTo} onChange={(e) => { setPeriodTo(e.target.value); setPeriodLimit(400); }} />
                     </label>
                   </div>
-                  <div className="bc-period-presets">
-                    {[["last30", "Últimos 30 dias"], ["last90", "Últimos 90 dias"], ["year", "Este ano"]].map(([kind, text]) => (
-                      <button key={kind} className="bc-btn-ghost" onClick={() => {
+                  <div className="bc-period-row">
+                    {[["last30", "30 dias"], ["last90", "90 dias"], ["year", "Este ano"]].map(([kind, text]) => (
+                      <button key={kind} className="bc-period-chip" onClick={() => {
                         const r = presetRange(kind, todayISO());
                         setPeriodFrom(r.start); setPeriodTo(r.end); setPeriodLimit(400);
                       }}>{text}</button>
                     ))}
-                    <button className="bc-btn-ghost" onClick={() => setPeriodPanelOpen(false)}>Voltar ao mês</button>
+                    <button className="bc-manage-link" onClick={() => setPeriodPanelOpen(false)}>voltar ao mês</button>
                   </div>
                   {periodError && <div className="bc-acct-msg error">{periodError}</div>}
-                </div>
-              )}
-              <div className="bc-ledger-account-balance">
-                {accountFilterDashboard
-                  ? <>Saldo atual em {accountFilterDashboard}: <strong>{fmt(getAccountBalance(accountFilterDashboard), getAccountCurrency(accountFilterDashboard))}</strong></>
-                  : <>Saldo atual (todas as contas): <strong>{fmt(balanceToday, dashboardCurrency)}</strong></>}
-                <span className="bc-ledger-until-today"> · {todayISO().split("-").reverse().join("/")}</span>
-              </div>
-              {periodActive && periodSum && (
-                <div className="bc-period-summary">
-                  <div>
-                    <strong>{periodSum.count.toLocaleString("pt-BR")}</strong> {periodSum.count === 1 ? "lançamento" : "lançamentos"}
-                    {accountFilterDashboard ? ` em ${accountFilterDashboard}` : ""}
-                  </div>
-                  <div>
-                    Entradas <strong style={{ color: "var(--income)" }}>{fmt(periodSum.income, dashboardCurrency)}</strong>
-                    {" · "}Saídas <strong style={{ color: "var(--expense)" }}>{fmt(periodSum.expense, dashboardCurrency)}</strong>
-                    {" · "}Saldo do período{" "}
-                    <strong style={{ color: periodSum.balance < 0 ? "var(--expense)" : "var(--ink)" }}>{fmt(periodSum.balance, dashboardCurrency)}</strong>
-                  </div>
-                  {accountFilterDashboard && (periodSum.transferIn > 0 || periodSum.transferOut > 0) && (
-                    <div className="bc-ledger-until-today">
-                      inclui {fmt(periodSum.transferIn, dashboardCurrency)} de transferências recebidas e {fmt(periodSum.transferOut, dashboardCurrency)} de enviadas
-                    </div>
+                  {periodActive && periodSum && (
+                    <>
+                      <div className="bc-period-tiles">
+                        <div><span>Entradas</span><strong style={{ color: "var(--income)" }}>{fmt(periodSum.income, dashboardCurrency)}</strong></div>
+                        <div><span>Saídas</span><strong style={{ color: "var(--expense)" }}>{fmt(periodSum.expense, dashboardCurrency)}</strong></div>
+                        <div><span>Saldo do período</span><strong style={{ color: periodSum.balance < 0 ? "var(--expense)" : "var(--ink)" }}>{fmt(periodSum.balance, dashboardCurrency)}</strong></div>
+                      </div>
+                      <div className="bc-period-note">
+                        {periodSum.count.toLocaleString("pt-BR")} {periodSum.count === 1 ? "lançamento" : "lançamentos"}
+                        {" · "}início <strong>{fmt(monthOpening, dashboardCurrency)}</strong>
+                        {" · "}fim{periodTo > todayISO() ? " (previsto)" : ""} <strong>{fmt(monthClosing, dashboardCurrency)}</strong>
+                        {accountFilterDashboard && (periodSum.transferIn > 0 || periodSum.transferOut > 0)
+                          ? ` · inclui transferências (${fmt(periodSum.transferIn, dashboardCurrency)} recebidas, ${fmt(periodSum.transferOut, dashboardCurrency)} enviadas)` : ""}
+                      </div>
+                    </>
                   )}
-                  <div>
-                    Saldo no início do período <strong>{fmt(monthOpening, dashboardCurrency)}</strong>
-                    {" · "}no fim{periodTo > todayISO() ? " (previsto)" : ""} <strong>{fmt(monthClosing, dashboardCurrency)}</strong>
-                  </div>
                 </div>
-              )}
-              {!periodActive && (
+              ) : (
                 <div className="bc-ledger-account-balance bc-ledger-month-balance">
-                  Em {MONTH_NAMES[cursor.m]} {cursor.y}
-                  {accountFilterDashboard ? ` (${accountFilterDashboard})` : ""}: início do mês{" "}
-                  <strong>{fmt(monthOpening, dashboardCurrency)}</strong>
+                  {MONTH_NAMES[cursor.m]} {cursor.y}: início <strong>{fmt(monthOpening, dashboardCurrency)}</strong>
                   {" · "}
-                  {isCurrentMonth || (cursor.y > now.getFullYear() || (cursor.y === now.getFullYear() && cursor.m > now.getMonth()))
-                    ? "fim do mês (previsto)" : "fim do mês"}{" "}
+                  fim{isCurrentMonth || cursor.y > now.getFullYear() || (cursor.y === now.getFullYear() && cursor.m > now.getMonth()) ? " (previsto)" : ""}{" "}
                   <strong>{fmt(monthClosing, dashboardCurrency)}</strong>
                 </div>
               )}
@@ -2881,10 +2903,10 @@ export default function App({ session }) {
                 <div className="bc-panel-title">Saldo ao longo do mês</div>
                 <div style={{ width: "100%", height: 140 }}>
                   <ResponsiveContainer>
-                    <LineChart data={dailyBalance} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                    <LineChart data={dailyBalance} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
                       <CartesianGrid stroke="var(--rule)" vertical={false} />
                       <XAxis dataKey="day" tick={{ fontSize: 10, fill: "var(--ink-soft)" }} axisLine={false} tickLine={false} />
-                      <YAxis tick={{ fontSize: 10, fill: "var(--ink-soft)" }} axisLine={false} tickLine={false} width={50}
+                      <YAxis tick={{ fontSize: 10, fill: "var(--ink-soft)" }} axisLine={false} tickLine={false} width={64}
                         tickFormatter={(v) => fmtCompact(v, dashboardCurrency)} />
                       <ReTooltip formatter={(v) => fmt(v, dashboardCurrency)} labelFormatter={(l) => `Dia ${l}`} />
                       <Line type="monotone" dataKey="saldo" stroke="var(--ink)" strokeWidth={2} dot={false} />
