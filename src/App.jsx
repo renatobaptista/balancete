@@ -1498,7 +1498,7 @@ export default function App({ session }) {
   }, [monthEntriesInCurrency, cursor, accountFilterDashboard]);
 
   // Saldo ao fim de cada dia que tem lançamento no mês exibido (todas as contas na moeda do painel, ou só a conta filtrada).
-  const { dayBalances, balanceToday } = useMemo(() => {
+  const { dayBalances, balanceToday, monthOpening, monthClosing } = useMemo(() => {
     const inScope = (name) => (accountFilterDashboard ? name === accountFilterDashboard : getAccountCurrency(name) === dashboardCurrency);
     const delta = (e) => {
       if (e.type === "transfer") {
@@ -1521,12 +1521,18 @@ export default function App({ session }) {
       if (e.date.slice(0, 7) < prefix) running += v;
       else if (e.date.slice(0, 7) === prefix) byDay[e.date] = (byDay[e.date] || 0) + v;
     }
+    const opening = running; // saldo antes do primeiro dia do mês exibido
     const result = {};
     Object.keys(byDay).sort().forEach((d) => {
       running += byDay[d];
       result[d] = Math.round(running * 100) / 100;
     });
-    return { dayBalances: result, balanceToday: Math.round(untilToday * 100) / 100 };
+    return {
+      dayBalances: result,
+      balanceToday: Math.round(untilToday * 100) / 100,
+      monthOpening: Math.round(opening * 100) / 100,
+      monthClosing: Math.round(running * 100) / 100,
+    };
   }, [entries, accounts, cursor, accountFilterDashboard, dashboardCurrency]);
 
   const donutColors = ["#A6432C", "#93701D", "#5F6F4F", "#7C5A3B", "#8A4A5C", "#4F6F6A", "#B08040"];
@@ -2582,6 +2588,15 @@ export default function App({ session }) {
                   ? <>Saldo atual em {accountFilterDashboard}: <strong>{fmt(getAccountBalance(accountFilterDashboard), getAccountCurrency(accountFilterDashboard))}</strong></>
                   : <>Saldo atual (todas as contas): <strong>{fmt(balanceToday, dashboardCurrency)}</strong></>}
                 <span className="bc-ledger-until-today"> · {todayISO().split("-").reverse().join("/")}</span>
+              </div>
+              <div className="bc-ledger-account-balance bc-ledger-month-balance">
+                Em {MONTH_NAMES[cursor.m]} {cursor.y}
+                {accountFilterDashboard ? ` (${accountFilterDashboard})` : ""}: início do mês{" "}
+                <strong>{fmt(monthOpening, dashboardCurrency)}</strong>
+                {" · "}
+                {isCurrentMonth || (cursor.y > now.getFullYear() || (cursor.y === now.getFullYear() && cursor.m > now.getMonth()))
+                  ? "fim do mês (previsto)" : "fim do mês"}{" "}
+                <strong>{fmt(monthClosing, dashboardCurrency)}</strong>
               </div>
               {onlySubscriptions && (
                 <div className="bc-ledger-until-today" style={{ margin: "6px 0" }}>
