@@ -31,6 +31,7 @@ import { ACCOUNT_KINDS, normalizeKind, groupByKind } from "./lib/accountKinds";
 import { renameAccountInEntry } from "./lib/accountRename";
 import { monthlyInvestmentReport } from "./lib/investments";
 import { monthTotals, dailyMovement } from "./lib/monthTotals";
+import { presetRange, validateRange, entriesInRange, periodSummary } from "./lib/period";
 import {
   buildSubscriptionEntries, nextSubscriptionEntries, subscriptionStats, isSubscriptionGroup, lastDateByGroup,
 } from "./lib/subscriptions";
@@ -170,6 +171,10 @@ export default function App({ session }) {
   const [fSubscription, setFSubscription] = useState(false); // marca "É assinatura" ao editar
   const [onlySubscriptions, setOnlySubscriptions] = useState(false); // lista só as assinaturas do mês
   const [investModalOpen, setInvestModalOpen] = useState(false); // janela "Investimentos do mês"
+  const [periodPanelOpen, setPeriodPanelOpen] = useState(false); // painel "Período" da lista de lançamentos
+  const [periodFrom, setPeriodFrom] = useState("");
+  const [periodTo, setPeriodTo] = useState("");
+  const [periodLimit, setPeriodLimit] = useState(400);
   const [accountFilterDashboard, setAccountFilterDashboard] = useState("");
   const [fDesc, setFDesc] = useState("");
   const [fNotes, setFNotes] = useState("");
@@ -1463,10 +1468,36 @@ export default function App({ session }) {
     return lines;
   }, [monthEntries]);
   const subHasAny = subLines.some((l) => l.stats.count > 0 || l.stats.refunds > 0);
-  const ledgerEntries = useMemo(
-    () => (onlySubscriptions ? monthEntries.filter((e) => e.subscription === true) : monthEntries),
-    [monthEntries, onlySubscriptions]
+  // Período personalizado: enquanto o painel está aberto e as datas são válidas, a lista mostra esse intervalo.
+  const periodError = periodPanelOpen ? validateRange(periodFrom, periodTo) : "";
+  const periodActive = periodPanelOpen && !periodError;
+  const periodEntries = useMemo(() => {
+    if (!periodActive) return null;
+    return entriesInRange(entries, periodFrom, periodTo)
+      .filter((e) => {
+        if (!accountFilterDashboard) return true;
+        if (e.type === "transfer") return e.fromAccount === accountFilterDashboard || e.toAccount === accountFilterDashboard;
+        return e.account === accountFilterDashboard;
+      })
+      .sort((a, b) => (a.date < b.date ? 1 : -1));
+  }, [entries, periodActive, periodFrom, periodTo, accountFilterDashboard]);
+  const periodSum = useMemo(
+    () => (periodEntries
+      ? periodSummary(periodEntries.filter((e) => e.type === "transfer" || (e.currency || "BRL") === dashboardCurrency), accountFilterDashboard)
+      : null),
+    [periodEntries, dashboardCurrency, accountFilterDashboard]
   );
+  const listBase = periodEntries || monthEntries;
+  const listFiltered = useMemo(
+    () => (onlySubscriptions ? listBase.filter((e) => e.subscription === true) : listBase),
+    [listBase, onlySubscriptions]
+  );
+  // no período, mostra só os primeiros lançamentos (um ano inteiro pode ter milhares); "mostrar mais" libera mais
+  const ledgerEntries = useMemo(
+    () => (periodActive ? listFiltered.slice(0, periodLimit) : listFiltered),
+    [listFiltered, periodActive, periodLimit]
+  );
+  const hiddenInPeriod = listFiltered.length - ledgerEntries.length;
   const lastDates = useMemo(() => lastDateByGroup(entries), [entries]);
 
   const allTimeInvested = useMemo(
@@ -1510,7 +1541,10 @@ export default function App({ session }) {
       if (!e.account || !inScope(e.account)) return 0;
       return e.type === "income" ? e.amount : -e.amount;
     };
+    // intervalo exibido: o período escolhido ou o mês do cursor
     const prefix = monthKey(cursor.y, cursor.m);
+    const rangeStart = periodActive ? periodFrom : `${prefix}-01`;
+    const rangeEnd = periodActive ? periodTo : `${prefix}-31`;
     const today = todayISO();
     let running = accounts.filter((a) => inScope(a.name)).reduce((s, a) => s + (a.initialBalance || 0), 0);
     let untilToday = running;
@@ -1518,10 +1552,10 @@ export default function App({ session }) {
     for (const e of entries) {
       const v = delta(e);
       if (e.date <= today) untilToday += v;
-      if (e.date.slice(0, 7) < prefix) running += v;
-      else if (e.date.slice(0, 7) === prefix) byDay[e.date] = (byDay[e.date] || 0) + v;
+      if (e.date < rangeStart) running += v;
+      else if (e.date <= rangeEnd) byDay[e.date] = (byDay[e.date] || 0) + v;
     }
-    const opening = running; // saldo antes do primeiro dia do mês exibido
+    const opening = running; // saldo antes do primeiro dia do intervalo exibido
     const result = {};
     Object.keys(byDay).sort().forEach((d) => {
       running += byDay[d];
@@ -1533,7 +1567,7 @@ export default function App({ session }) {
       monthOpening: Math.round(opening * 100) / 100,
       monthClosing: Math.round(running * 100) / 100,
     };
-  }, [entries, accounts, cursor, accountFilterDashboard, dashboardCurrency]);
+  }, [entries, accounts, cursor, accountFilterDashboard, dashboardCurrency, periodActive, periodFrom, periodTo]);
 
   const donutColors = ["#A6432C", "#93701D", "#5F6F4F", "#7C5A3B", "#8A4A5C", "#4F6F6A", "#B08040"];
 
@@ -1866,6 +1900,19 @@ export default function App({ session }) {
         }
         .bc-ledger-account-balance strong { color: var(--ink); font-weight: 500; }
         .bc-ledger-until-today { opacity: 0.8; }
+        .bc-ledger-head-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .bc-period-btn {
+          padding: 5px 10px; border-radius: 7px; border: 1px solid var(--rule-strong); background: var(--paper);
+          font-size: 12px; color: var(--ink); cursor: pointer;
+        }
+        .bc-period-btn.is-open { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+        .bc-period-panel { padding: 10px 16px 12px; border-top: 1px solid var(--rule); background: var(--paper); }
+        .bc-period-fields { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+        .bc-period-fields label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-soft); }
+        .bc-period-fields input { padding: 5px 8px; border-radius: 7px; border: 1px solid var(--rule-strong); background: var(--paper-card); font-size: 12.5px; }
+        .bc-period-presets { display: flex; gap: 6px; flex-wrap: wrap; }
+        .bc-period-summary { padding: 10px 16px; border-top: 1px solid var(--rule); font-size: 12.5px; line-height: 1.7; }
+        .bc-ledger-more { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 16px; border-top: 1px solid var(--rule); font-size: 12px; color: var(--ink-soft); }
         .bc-ledger-dayhead {
           display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 7px 16px;
           background: var(--paper); border-top: 1px solid var(--rule); font-size: 11.5px; color: var(--ink-soft);
@@ -2567,48 +2614,114 @@ export default function App({ session }) {
           <div className="bc-main-grid">
             <div className="bc-ledger">
               <div className="bc-ledger-head">
-                <span>Lançamentos do mês</span>
-                {allAccounts.length > 0 && (
-                  <select
-                    className="bc-ledger-filter"
-                    value={accountFilterDashboard}
-                    onChange={(e) => setAccountFilterDashboard(e.target.value)}
+                <span>
+                  {periodActive
+                    ? `Lançamentos de ${periodFrom.split("-").reverse().join("/")} a ${periodTo.split("-").reverse().join("/")}`
+                    : "Lançamentos do mês"}
+                </span>
+                <span className="bc-ledger-head-actions">
+                  <button
+                    className={`bc-period-btn ${periodPanelOpen ? "is-open" : ""}`}
+                    onClick={() => {
+                      if (periodPanelOpen) { setPeriodPanelOpen(false); return; }
+                      const first = `${monthKey(cursor.y, cursor.m)}-01`;
+                      const last = `${monthKey(cursor.y, cursor.m)}-${String(new Date(cursor.y, cursor.m + 1, 0).getDate()).padStart(2, "0")}`;
+                      setPeriodFrom(first); setPeriodTo(last); setPeriodLimit(400); setPeriodPanelOpen(true);
+                    }}
                   >
-                    <option value="">Todas as contas</option>
-                    {groupByKind(allAccounts, getAccountKind).map((g) => (
-                      <optgroup key={g.value} label={g.group}>
-                        {g.names.map((a) => <option key={a} value={a}>{a}</option>)}
-                      </optgroup>
-                    ))}
-                  </select>
-                )}
+                    Período
+                  </button>
+                  {allAccounts.length > 0 && (
+                    <select
+                      className="bc-ledger-filter"
+                      value={accountFilterDashboard}
+                      onChange={(e) => setAccountFilterDashboard(e.target.value)}
+                    >
+                      <option value="">Todas as contas</option>
+                      {groupByKind(allAccounts, getAccountKind).map((g) => (
+                        <optgroup key={g.value} label={g.group}>
+                          {g.names.map((a) => <option key={a} value={a}>{a}</option>)}
+                        </optgroup>
+                      ))}
+                    </select>
+                  )}
+                </span>
               </div>
+              {periodPanelOpen && (
+                <div className="bc-period-panel">
+                  <div className="bc-period-fields">
+                    <label>De
+                      <input type="date" value={periodFrom} onChange={(e) => { setPeriodFrom(e.target.value); setPeriodLimit(400); }} />
+                    </label>
+                    <label>até
+                      <input type="date" value={periodTo} onChange={(e) => { setPeriodTo(e.target.value); setPeriodLimit(400); }} />
+                    </label>
+                  </div>
+                  <div className="bc-period-presets">
+                    {[["last30", "Últimos 30 dias"], ["last90", "Últimos 90 dias"], ["year", "Este ano"]].map(([kind, text]) => (
+                      <button key={kind} className="bc-btn-ghost" onClick={() => {
+                        const r = presetRange(kind, todayISO());
+                        setPeriodFrom(r.start); setPeriodTo(r.end); setPeriodLimit(400);
+                      }}>{text}</button>
+                    ))}
+                    <button className="bc-btn-ghost" onClick={() => setPeriodPanelOpen(false)}>Voltar ao mês</button>
+                  </div>
+                  {periodError && <div className="bc-acct-msg error">{periodError}</div>}
+                </div>
+              )}
               <div className="bc-ledger-account-balance">
                 {accountFilterDashboard
                   ? <>Saldo atual em {accountFilterDashboard}: <strong>{fmt(getAccountBalance(accountFilterDashboard), getAccountCurrency(accountFilterDashboard))}</strong></>
                   : <>Saldo atual (todas as contas): <strong>{fmt(balanceToday, dashboardCurrency)}</strong></>}
                 <span className="bc-ledger-until-today"> · {todayISO().split("-").reverse().join("/")}</span>
               </div>
-              <div className="bc-ledger-account-balance bc-ledger-month-balance">
-                Em {MONTH_NAMES[cursor.m]} {cursor.y}
-                {accountFilterDashboard ? ` (${accountFilterDashboard})` : ""}: início do mês{" "}
-                <strong>{fmt(monthOpening, dashboardCurrency)}</strong>
-                {" · "}
-                {isCurrentMonth || (cursor.y > now.getFullYear() || (cursor.y === now.getFullYear() && cursor.m > now.getMonth()))
-                  ? "fim do mês (previsto)" : "fim do mês"}{" "}
-                <strong>{fmt(monthClosing, dashboardCurrency)}</strong>
-              </div>
+              {periodActive && periodSum && (
+                <div className="bc-period-summary">
+                  <div>
+                    <strong>{periodSum.count.toLocaleString("pt-BR")}</strong> {periodSum.count === 1 ? "lançamento" : "lançamentos"}
+                    {accountFilterDashboard ? ` em ${accountFilterDashboard}` : ""}
+                  </div>
+                  <div>
+                    Entradas <strong style={{ color: "var(--income)" }}>{fmt(periodSum.income, dashboardCurrency)}</strong>
+                    {" · "}Saídas <strong style={{ color: "var(--expense)" }}>{fmt(periodSum.expense, dashboardCurrency)}</strong>
+                    {" · "}Saldo do período{" "}
+                    <strong style={{ color: periodSum.balance < 0 ? "var(--expense)" : "var(--ink)" }}>{fmt(periodSum.balance, dashboardCurrency)}</strong>
+                  </div>
+                  {accountFilterDashboard && (periodSum.transferIn > 0 || periodSum.transferOut > 0) && (
+                    <div className="bc-ledger-until-today">
+                      inclui {fmt(periodSum.transferIn, dashboardCurrency)} de transferências recebidas e {fmt(periodSum.transferOut, dashboardCurrency)} de enviadas
+                    </div>
+                  )}
+                  <div>
+                    Saldo no início do período <strong>{fmt(monthOpening, dashboardCurrency)}</strong>
+                    {" · "}no fim{periodTo > todayISO() ? " (previsto)" : ""} <strong>{fmt(monthClosing, dashboardCurrency)}</strong>
+                  </div>
+                </div>
+              )}
+              {!periodActive && (
+                <div className="bc-ledger-account-balance bc-ledger-month-balance">
+                  Em {MONTH_NAMES[cursor.m]} {cursor.y}
+                  {accountFilterDashboard ? ` (${accountFilterDashboard})` : ""}: início do mês{" "}
+                  <strong>{fmt(monthOpening, dashboardCurrency)}</strong>
+                  {" · "}
+                  {isCurrentMonth || (cursor.y > now.getFullYear() || (cursor.y === now.getFullYear() && cursor.m > now.getMonth()))
+                    ? "fim do mês (previsto)" : "fim do mês"}{" "}
+                  <strong>{fmt(monthClosing, dashboardCurrency)}</strong>
+                </div>
+              )}
               {onlySubscriptions && (
                 <div className="bc-ledger-until-today" style={{ margin: "6px 0" }}>
-                  Mostrando só as assinaturas do mês.{" "}
+                  Mostrando só as assinaturas {periodActive ? "do período" : "do mês"}.{" "}
                   <button className="bc-manage-link" onClick={() => setOnlySubscriptions(false)}>ver todos</button>
                 </div>
               )}
               {ledgerEntries.length === 0 && (
                 <div className="bc-ledger-empty">
-                  {onlySubscriptions
-                    ? `Nenhuma assinatura marcada em ${MONTH_NAMES[cursor.m].toLowerCase()}.`
-                    : `Nenhum lançamento em ${MONTH_NAMES[cursor.m].toLowerCase()}. Que tal registrar o primeiro?`}
+                  {periodActive
+                    ? (onlySubscriptions ? "Nenhuma assinatura marcada neste período." : "Nenhum lançamento neste período.")
+                    : onlySubscriptions
+                      ? `Nenhuma assinatura marcada em ${MONTH_NAMES[cursor.m].toLowerCase()}.`
+                      : `Nenhum lançamento em ${MONTH_NAMES[cursor.m].toLowerCase()}. Que tal registrar o primeiro?`}
                 </div>
               )}
               {ledgerEntries.map((e, idx) => {
@@ -2617,7 +2730,7 @@ export default function App({ session }) {
                 const isFirstOfDay = idx === 0 || ledgerEntries[idx - 1].date !== e.date;
                 const dayHead = isFirstOfDay ? (
                   <div className="bc-ledger-dayhead">
-                    <span>{day}/{month} · {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR", { weekday: "long" })}</span>
+                    <span>{day}/{month}{periodActive ? `/${e.date.slice(0, 4)}` : ""} · {new Date(e.date + "T00:00:00").toLocaleDateString("pt-BR", { weekday: "long" })}</span>
                     {dayBalances[e.date] !== undefined && (
                       <span className="bc-ledger-daybalance" style={{ color: dayBalances[e.date] < 0 ? "var(--expense)" : "var(--ink)" }}>
                         Saldo no dia: {fmt(dayBalances[e.date], dashboardCurrency)}
@@ -2722,6 +2835,12 @@ export default function App({ session }) {
                   </Fragment>
                 );
               })}
+              {periodActive && hiddenInPeriod > 0 && (
+                <div className="bc-ledger-more">
+                  <span>Mostrando {ledgerEntries.length.toLocaleString("pt-BR")} de {listFiltered.length.toLocaleString("pt-BR")} lançamentos.</span>
+                  <button className="bc-btn-ghost" onClick={() => setPeriodLimit(periodLimit + 400)}>mostrar mais 400</button>
+                </div>
+              )}
             </div>
 
             <div>
