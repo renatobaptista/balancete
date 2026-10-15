@@ -185,6 +185,8 @@ export default function App({ session }) {
   const [fDate, setFDate] = useState(todayISO());
   const [formError, setFormError] = useState("");
   const [editingEntryId, setEditingEntryId] = useState(null);
+  const formRef = useRef(null);
+  const scrollBeforeEdit = useRef(null); // posição da rolagem antes de abrir a edição
   const [pendingEditScope, setPendingEditScope] = useState(false);
 
   const [addingLimitFor, setAddingLimitFor] = useState("");
@@ -267,6 +269,13 @@ export default function App({ session }) {
     })();
   }, [userId]);
 
+  // Ao editar um lançamento lá embaixo na lista, leva a tela até o formulário (que fica no topo).
+  useEffect(() => {
+    if (editingEntryId && formRef.current) {
+      formRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [editingEntryId]);
+
   function defaultSubcategoryFor(type, category) {
     const subs = categories[type]?.[category] || [];
     return subs[0] || "Geral";
@@ -282,6 +291,11 @@ export default function App({ session }) {
   }, [fType, categories, fCategory]);
 
   function resetFormFields() {
+    if (scrollBeforeEdit.current != null) {
+      const y = scrollBeforeEdit.current;
+      scrollBeforeEdit.current = null;
+      setTimeout(() => window.scrollTo({ top: y, behavior: "smooth" }), 80);
+    }
     setFAmount("");
     setFToAmount("");
     setFCommercialRate("");
@@ -315,6 +329,7 @@ export default function App({ session }) {
   }
 
   function openEditEntryForm(entry) {
+    scrollBeforeEdit.current = window.scrollY; // para voltar à lista depois de salvar ou cancelar
     setEditingEntryId(entry.id);
     setPendingEditScope(false);
     setFormError("");
@@ -2347,7 +2362,7 @@ export default function App({ session }) {
               </button>
             )}
             {formOpen && (
-              <div className="bc-form">
+              <div className="bc-form" ref={formRef}>
                 <div className="bc-type-row">
                   {Object.entries(TYPE_META).map(([key, meta]) => {
                     const Icon = meta.icon;
