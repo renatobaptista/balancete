@@ -1857,6 +1857,8 @@ export default function App({ session }) {
           display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink);
           padding: 8px 0; cursor: pointer;
         }
+        .bc-field .bc-installment-toggle { display: flex; text-transform: none; letter-spacing: 0; font-size: 13px; margin-bottom: 0; }
+        .bc-installment-toggle input[type=checkbox] { width: auto; padding: 0; margin: 0; flex-shrink: 0; }
         .bc-installment-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
         .bc-installment-row input[type=number] {
           width: 56px; padding: 6px 8px; border-radius: 7px; border: 1px solid var(--rule-strong);
@@ -2023,6 +2025,16 @@ export default function App({ session }) {
           .bc-ledger-desc-main { white-space: normal; }
           .bc-ledger-notes { max-width: 100%; }
           .bc-ledger-dayhead { flex-wrap: wrap; row-gap: 2px; }
+          .bc-type-row { flex-wrap: wrap; }
+          .bc-type-btn { flex: 1 1 calc(50% - 4px); }
+          .bc-form { padding: 14px 12px; }
+          .bc-form-grid { align-items: start; }
+          .bc-field-toggle, .bc-form-grid > .bc-field:last-child { grid-column: 1 / -1; }
+          .bc-field-toggle > label:first-child { display: none; }
+          .bc-form-actions { flex-wrap: wrap; row-gap: 10px; }
+          .bc-form-actions-left { flex: 1 1 100%; }
+          .bc-form-actions-right { flex: 1 1 100%; }
+          .bc-form-actions-right > button { flex: 1; justify-content: center; }
           .bc-period-tiles { gap: 6px; }
           .bc-period-tiles > div { padding: 6px 8px; }
           .bc-period-tiles strong { font-size: 11.5px; }
@@ -2521,7 +2533,7 @@ export default function App({ session }) {
                     );
                   })()}
                   {fType === "expense" && !editingEntryId && (
-                    <div className="bc-field">
+                    <div className="bc-field bc-field-toggle">
                       <label>&nbsp;</label>
                       <label className="bc-installment-toggle">
                         <input
@@ -2561,7 +2573,7 @@ export default function App({ session }) {
                     </div>
                   )}
                   {(fType === "expense" || fType === "income") && !editingEntryId && (
-                    <div className="bc-field">
+                    <div className="bc-field bc-field-toggle">
                       <label>&nbsp;</label>
                       <label className="bc-installment-toggle">
                         <input
@@ -2596,7 +2608,7 @@ export default function App({ session }) {
                     </div>
                   )}
                   {editingEntryId && fType !== "transfer" && (
-                    <div className="bc-field">
+                    <div className="bc-field bc-field-toggle">
                       <label>&nbsp;</label>
                       <label className="bc-installment-toggle">
                         <input
