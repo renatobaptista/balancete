@@ -36,4 +36,12 @@ describe("groupByKind", () => {
   it("returns nothing for an empty list", () => {
     expect(groupByKind([], getKind)).toEqual([]);
   });
+
+  it("puts inactive accounts last inside each group, keeping the order of each part", () => {
+    const inactive = new Set(["A", "C"]);
+    const k = { A: "corrente", B: "corrente", C: "corrente", D: "corrente", Nomad: "internacional", Wise: "internacional" };
+    const groups = groupByKind(["A", "B", "C", "D", "Nomad", "Wise"], (n) => k[n], (n) => !inactive.has(n));
+    expect(groups[0].names).toEqual(["B", "D", "A", "C"]);
+    expect(groups[1].names).toEqual(["Nomad", "Wise"]);
+  });
 });

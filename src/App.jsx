@@ -856,6 +856,12 @@ export default function App({ session }) {
       </>
     );
   }
+  // contas só citadas em lançamentos (sem cadastro) contam como ativas
+  function isAccountActive(name) {
+    const acc = accounts.find((a) => a.name === name);
+    return !acc || acc.active !== false;
+  }
+  const accountOptionLabel = (name) => (isAccountActive(name) ? name : `${name} (inativa)`);
   function getAccountBalance(name) {
     const acc = accounts.find((a) => a.name === name);
     const initial = acc?.initialBalance || 0;
@@ -2709,9 +2715,9 @@ export default function App({ session }) {
                       onChange={(e) => setAccountFilterDashboard(e.target.value)}
                     >
                       <option value="">Todas as contas</option>
-                      {groupByKind(allAccounts, getAccountKind).map((g) => (
+                      {groupByKind(allAccounts, getAccountKind, isAccountActive).map((g) => (
                         <optgroup key={g.value} label={g.group}>
-                          {g.names.map((a) => <option key={a} value={a}>{a}</option>)}
+                          {g.names.map((a) => <option key={a} value={a}>{accountOptionLabel(a)}</option>)}
                         </optgroup>
                       ))}
                     </select>
@@ -3061,9 +3067,9 @@ export default function App({ session }) {
                   onChange={(e) => setAccountFilterReport(e.target.value)}
                 >
                   <option value="">Todas</option>
-                  {groupByKind(allAccounts, getAccountKind).map((g) => (
+                  {groupByKind(allAccounts, getAccountKind, isAccountActive).map((g) => (
                     <optgroup key={g.value} label={g.group}>
-                      {g.names.map((a) => <option key={a} value={a}>{a}</option>)}
+                      {g.names.map((a) => <option key={a} value={a}>{accountOptionLabel(a)}</option>)}
                     </optgroup>
                   ))}
                 </select>
@@ -3237,7 +3243,7 @@ export default function App({ session }) {
               <p className="bc-import-help">Nenhuma conta cadastrada ainda.</p>
             )}
 
-            {[...accounts].sort((a, b) => a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" })).map((acc) => (
+            {[...accounts].sort((a, b) => (a.active === false) - (b.active === false) || a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" })).map((acc) => (
               <div className="bc-cat-block" key={acc.name}>
                 <div className="bc-cat-head">
                   {editingAccount && editingAccount.oldName === acc.name ? (

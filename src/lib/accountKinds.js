@@ -13,9 +13,13 @@ export function normalizeKind(kind) {
   return KNOWN.has(kind) ? kind : "corrente";
 }
 
-/** Agrupa nomes de conta por tipo (na ordem de ACCOUNT_KINDS), sem grupos vazios. */
-export function groupByKind(names, getKind) {
+/**
+ * Agrupa nomes de conta por tipo (na ordem de ACCOUNT_KINDS), sem grupos vazios.
+ * Com `isActive`, as contas inativas vão para o fim de cada grupo (a ordem de cada parte é mantida).
+ */
+export function groupByKind(names, getKind, isActive) {
+  const inactiveLast = (list) => (isActive ? [...list.filter((n) => isActive(n)), ...list.filter((n) => !isActive(n))] : list);
   return ACCOUNT_KINDS
-    .map((k) => ({ ...k, names: names.filter((n) => normalizeKind(getKind(n)) === k.value) }))
+    .map((k) => ({ ...k, names: inactiveLast(names.filter((n) => normalizeKind(getKind(n)) === k.value)) }))
     .filter((g) => g.names.length > 0);
 }
