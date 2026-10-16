@@ -31,6 +31,7 @@ import { ACCOUNT_KINDS, normalizeKind, groupByKind, groupWithInactiveLast } from
 import { renameAccountInEntry } from "./lib/accountRename";
 import { monthlyInvestmentReport } from "./lib/investments";
 import { monthTotals, dailyMovement } from "./lib/monthTotals";
+import { suggestFromHistory } from "./lib/suggestions";
 import { presetRange, validateRange, entriesInRange, periodSummary } from "./lib/period";
 import {
   buildSubscriptionEntries, nextSubscriptionEntries, subscriptionStats, isSubscriptionGroup, lastDateByGroup,
@@ -357,19 +358,31 @@ export default function App({ session }) {
     setFormOpen(true);
   }
 
+  // Ao sair da descrição: se ela já foi usada, copia categoria, subcategoria, conta e valor do lançamento mais
+  // recente igual (cai nas regras antigas só quando não há histórico). Não mexe em transferências nem em edições.
   function applyDescriptionRuleIfKnown() {
-    if (fType === "transfer") return;
-    const key = normalizeHeader(fDesc.trim());
-    if (!key) { setAppliedDescHint(null); return; }
-    const rule = importDescriptionRules[key];
-    if (rule && rule.category && !rule.ignore) {
-      setFType(rule.type);
-      setFCategory(rule.category);
-      setFSubcategory(rule.subcategory || defaultSubcategoryFor(rule.type, rule.category));
-      setAppliedDescHint({ category: rule.category, subcategory: rule.subcategory });
-    } else {
-      setAppliedDescHint(null);
-    }
+    if (fType === "transfer" || editingEntryId) return;
+    const desc = fDesc.trim();
+    if (!desc) { setAppliedDescHint(null); return; }
+    const history = suggestFromHistory(entries, desc, todayISO());
+    const rule = importDescriptionRules[normalizeHeader(desc)];
+    const s = history || (rule && rule.category && !rule.ignore
+      ? { type: rule.type, category: rule.category, subcategory: rule.subcategory || "", account: "", amount: null }
+      : null);
+    const subs = s && categories[s.type] ? categories[s.type][s.category] : undefined;
+    if (!s || !subs) { setAppliedDescHint(null); return; } // sem sugestão, ou categoria que não existe mais
+    const subcategory = subs.includes(s.subcategory) ? s.subcategory : defaultSubcategoryFor(s.type, s.category);
+    setFType(s.type);
+    setFCategory(s.category);
+    setFSubcategory(subcategory);
+    const accountOk = !!s.account && accounts.some((a) => a.name === s.account && a.active !== false);
+    if (accountOk) setFAccount(s.account);
+    const amountOk = s.amount > 0 && !String(fAmount).trim(); // não sobrescreve um valor já digitado
+    if (amountOk) setFAmount(String(s.amount));
+    setAppliedDescHint({
+      category: s.category, subcategory, account: accountOk ? s.account : "",
+      amount: amountOk ? s.amount : null, currency: accountOk ? getAccountCurrency(s.account) : "BRL",
+    });
   }
 
   function learnDescriptionRule(description, type, category, subcategory) {
@@ -2427,7 +2440,9 @@ export default function App({ session }) {
                     />
                     {appliedDescHint && (
                       <span className="bc-field-hint" style={{ color: "var(--income)" }}>
-                        categoria aplicada: {appliedDescHint.category}{appliedDescHint.subcategory ? ` › ${appliedDescHint.subcategory}` : ""}
+                        preenchido: {appliedDescHint.category}{appliedDescHint.subcategory ? ` › ${appliedDescHint.subcategory}` : ""}
+                        {appliedDescHint.account ? ` · ${appliedDescHint.account}` : ""}
+                        {appliedDescHint.amount ? ` · ${fmt(appliedDescHint.amount, appliedDescHint.currency)}` : ""}
                       </span>
                     )}
                   </div>
