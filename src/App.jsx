@@ -1767,10 +1767,12 @@ export default function App({ session }) {
         }
         .bc-month-nav button:hover { background: var(--rule); }
         .bc-month-label { min-width: 150px; text-align: center; text-transform: capitalize; }
-        .bc-today-btn {
-          font-size: 11px; text-decoration: underline; color: var(--ink-soft);
-          background: none; border: none; cursor: pointer; padding: 0;
+        .bc-month-nav .bc-today-btn {
+          font-size: 11px; text-decoration: underline; color: var(--ink-soft); white-space: nowrap; display: inline-block;
+          background: none; border: none; cursor: pointer; padding: 0; width: auto; height: auto; border-radius: 0;
         }
+        .bc-month-nav .bc-today-btn:hover { background: none; color: var(--ink); }
+        .bc-month-center { min-width: 0; }
 
         .bc-tabs { display: flex; gap: 18px; margin-bottom: 18px; border-bottom: 1px solid var(--rule); }
         .bc-tab {
@@ -2010,7 +2012,8 @@ export default function App({ session }) {
           .bc-root { padding: 16px 14px; }
           .bc-header-right { flex-wrap: wrap; width: 100%; gap: 8px; }
           .bc-month-nav { width: 100%; justify-content: space-between; }
-          .bc-month-label { min-width: 0; flex: 1; }
+          .bc-month-center { flex: 1; }
+          .bc-month-label { min-width: 0; }
           .bc-card { padding: 12px 12px; min-width: 0; }
           .bc-card-value { font-size: 16px; overflow-wrap: anywhere; }
           .bc-ledger-head { flex-wrap: wrap; }
@@ -2034,7 +2037,9 @@ export default function App({ session }) {
           .bc-form-actions { flex-wrap: wrap; row-gap: 10px; }
           .bc-form-actions-left { flex: 1 1 100%; }
           .bc-form-actions-right { flex: 1 1 100%; }
-          .bc-form-actions-right > button { flex: 1; justify-content: center; }
+          .bc-form-actions-right > button { justify-content: center; white-space: nowrap; }
+          .bc-form-actions-right > .bc-btn-primary { flex: 1; }
+          .bc-form-actions-right > .bc-btn-ghost { flex: 0 0 auto; padding: 9px 18px; }
           .bc-period-tiles { gap: 6px; }
           .bc-period-tiles > div { padding: 6px 8px; }
           .bc-period-tiles strong { font-size: 11.5px; }
@@ -2148,6 +2153,12 @@ export default function App({ session }) {
         table.bc-report { border-collapse: collapse; width: 100%; font-size: 12.5px; min-width: 560px; }
         .bc-report th, .bc-report td { padding: 6px 14px; text-align: right; white-space: nowrap; font-family: 'IBM Plex Mono', monospace; }
         .bc-report th:first-child, .bc-report td.bc-rc-label { text-align: left; font-family: 'Inter', sans-serif; }
+        /* celular: a coluna de categorias fica fixa enquanto os meses rolam para o lado */
+        .bc-report th:first-child, .bc-report td.bc-rc-label { position: sticky; left: 0; z-index: 1; background: var(--paper-card); }
+        @media (max-width: 560px) {
+          .bc-report th, .bc-report td { padding: 6px 10px; }
+          .bc-report th:first-child, .bc-report td.bc-rc-label { box-shadow: 1px 0 0 var(--rule); }
+        }
         .bc-report thead th { border-bottom: 1px solid var(--rule-strong); font-size: 10.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: .03em; font-weight: 500; padding-top: 10px; padding-bottom: 8px; }
         .bc-report tr.bc-section-head td { font-family: 'Fraunces', serif; font-weight: 600; font-size: 13.5px; padding-top: 16px; padding-bottom: 4px; }
         .bc-report tr.bc-cat-header td.bc-rc-label { font-weight: 500; padding-top: 8px; color: var(--ink); }
@@ -2220,7 +2231,7 @@ export default function App({ session }) {
           {activeTab === "dashboard" && (
             <div className="bc-month-nav">
               <button aria-label="Mês anterior" title="Mês anterior" onClick={() => changeMonth(-1)}><ChevronLeft size={16} /></button>
-              <div>
+              <div className="bc-month-center">
                 <div className="bc-month-label">{MONTH_NAMES[cursor.m]} {cursor.y}</div>
                 {!isCurrentMonth && (
                   <div style={{ textAlign: "center" }}>
