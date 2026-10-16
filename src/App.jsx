@@ -27,7 +27,7 @@ import {
 } from "./lib/profile";
 import { installmentInfo, findSeries, futureInstallments, planAnticipation } from "./lib/installments";
 import { conversionSummary, feeDescription } from "./lib/conversion";
-import { ACCOUNT_KINDS, normalizeKind, groupByKind } from "./lib/accountKinds";
+import { ACCOUNT_KINDS, normalizeKind, groupByKind, groupWithInactiveLast } from "./lib/accountKinds";
 import { renameAccountInEntry } from "./lib/accountRename";
 import { monthlyInvestmentReport } from "./lib/investments";
 import { monthTotals, dailyMovement } from "./lib/monthTotals";
@@ -2715,7 +2715,7 @@ export default function App({ session }) {
                       onChange={(e) => setAccountFilterDashboard(e.target.value)}
                     >
                       <option value="">Todas as contas</option>
-                      {groupByKind(allAccounts, getAccountKind, isAccountActive).map((g) => (
+                      {groupWithInactiveLast(allAccounts, getAccountKind, isAccountActive).map((g) => (
                         <optgroup key={g.value} label={g.group}>
                           {g.names.map((a) => <option key={a} value={a}>{accountOptionLabel(a)}</option>)}
                         </optgroup>
@@ -3067,7 +3067,7 @@ export default function App({ session }) {
                   onChange={(e) => setAccountFilterReport(e.target.value)}
                 >
                   <option value="">Todas</option>
-                  {groupByKind(allAccounts, getAccountKind, isAccountActive).map((g) => (
+                  {groupWithInactiveLast(allAccounts, getAccountKind, isAccountActive).map((g) => (
                     <optgroup key={g.value} label={g.group}>
                       {g.names.map((a) => <option key={a} value={a}>{accountOptionLabel(a)}</option>)}
                     </optgroup>

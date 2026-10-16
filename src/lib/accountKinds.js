@@ -23,3 +23,10 @@ export function groupByKind(names, getKind, isActive) {
     .map((k) => ({ ...k, names: inactiveLast(names.filter((n) => normalizeKind(getKind(n)) === k.value)) }))
     .filter((g) => g.names.length > 0);
 }
+
+/** Como groupByKind, mas só com as ativas; todas as inativas vão juntas num último grupo "Contas inativas" (na ordem dos tipos). */
+export function groupWithInactiveLast(names, getKind, isActive) {
+  const active = groupByKind(names.filter((n) => isActive(n)), getKind);
+  const inactive = groupByKind(names.filter((n) => !isActive(n)), getKind).flatMap((g) => g.names);
+  return inactive.length ? [...active, { value: "inativas", label: "Contas inativas", group: "Contas inativas", names: inactive }] : active;
+}

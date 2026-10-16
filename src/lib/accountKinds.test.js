@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ACCOUNT_KINDS, normalizeKind, groupByKind } from "./accountKinds";
+import { ACCOUNT_KINDS, normalizeKind, groupByKind, groupWithInactiveLast } from "./accountKinds";
 
 describe("ACCOUNT_KINDS", () => {
   it("has the four kinds in display order", () => {
@@ -43,5 +43,26 @@ describe("groupByKind", () => {
     const groups = groupByKind(["A", "B", "C", "D", "Nomad", "Wise"], (n) => k[n], (n) => !inactive.has(n));
     expect(groups[0].names).toEqual(["B", "D", "A", "C"]);
     expect(groups[1].names).toEqual(["Nomad", "Wise"]);
+  });
+});
+
+describe("groupWithInactiveLast", () => {
+  const k = { A: "corrente", B: "corrente", Visa: "credito", Old: "credito", Nomad: "internacional" };
+  const inactive = new Set(["A", "Old"]);
+  const groups = groupWithInactiveLast(["A", "B", "Visa", "Old", "Nomad"], (n) => k[n], (n) => !inactive.has(n));
+
+  it("keeps active accounts in their kind groups", () => {
+    expect(groups.map((g) => g.group)).toEqual(["Contas correntes", "Cartões de crédito", "Internacional", "Contas inativas"]);
+    expect(groups[0].names).toEqual(["B"]);
+    expect(groups[1].names).toEqual(["Visa"]);
+  });
+
+  it("collects every inactive account in one final group, grouped by kind order", () => {
+    expect(groups[groups.length - 1].names).toEqual(["A", "Old"]);
+  });
+
+  it("has no inactive group when everything is active", () => {
+    const g = groupWithInactiveLast(["A", "B"], (n) => k[n], () => true);
+    expect(g.map((x) => x.group)).toEqual(["Contas correntes"]);
   });
 });
